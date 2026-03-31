@@ -1,0 +1,196 @@
+// proto/events.proto — gRPC inter-service event contracts for the erg monorepo.
+//
+// This file defines the canonical event types shared across all services.
+// Each service subscribes to the events it cares about.
+//
+// Usage:
+//   protoc --go_out=../pkg --go_opt=paths=source_relative \
+//          --go-grpc_out=../pkg --go-grpc_opt=paths=source_relative \
+//          events.proto
+
+syntax = "proto3";
+
+package erg.events;
+
+option go_package = "erg.ninja/pkg/pb;pb";
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/struct.proto";
+
+// ── Event Envelope ────────────────────────────────────────────────────────────
+// Every event published through the bus is wrapped in this envelope.
+message EventEnvelope {
+  string event_type = 1;   // e.g. "bot.message.created", "notification.sent"
+  string source_service = 2; // e.g. "bot-service", "notification-service"
+  google.protobuf.Timestamp timestamp = 3;
+  string trace_id = 4;      // OpenTelemetry trace ID for distributed tracing.
+  bytes payload = 5;        // Serialized event-specific payload.
+}
+
+// ── Bot Events ───────────────────────────────────────────────────────────────
+
+message BotMessageCreated {
+  string message_id = 1;
+  string platform = 2;         // "discord", "telegram", "whatsapp"
+  string user_id = 3;
+  string conversation_id = 4;
+  string content = 5;
+  google.protobuf.Timestamp received_at = 6;
+}
+
+message BotCommandExecuted {
+  string command = 1;
+  string user_id = 2;
+  string platform = 3;
+  bool success = 4;
+  int64 duration_ms = 5;
+  string error_message = 6;
+}
+
+message BotWorkflowTriggered {
+  string workflow_id = 1;
+  string user_id = 2;
+  string workflow_type = 3;
+  map<string, string> params = 4;
+}
+
+message BotConversationEnded {
+  string conversation_id = 1;
+  string user_id = 2;
+  string platform = 3;
+  int64 duration_seconds = 4;
+  google.protobuf.Timestamp ended_at = 5;
+}
+
+// ── Notification Events ───────────────────────────────────────────────────────
+
+message NotificationQueued {
+  string notification_id = 1;
+  string channel = 2;           // "discord", "telegram", "email", etc.
+  string recipient = 3;
+  string subject = 4;
+  google.protobuf.Timestamp scheduled_at = 5;
+  map<string, string> metadata = 6;
+}
+
+message NotificationSent {
+  string notification_id = 1;
+  string channel = 2;
+  string recipient = 3;
+  bool success = 4;
+  string error_message = 5;
+  google.protobuf.Timestamp sent_at = 6;
+}
+
+message NotificationDelivered {
+  string notification_id = 1;
+  string channel = 2;
+  google.protobuf.Timestamp delivered_at = 3;
+}
+
+message NotificationDigestScheduled {
+  string recipient = 1;
+  string channel = 2;
+  int32 notification_count = 3;
+  google.protobuf.Timestamp scheduled_at = 4;
+}
+
+// ── Crawler Events ───────────────────────────────────────────────────────────
+
+message CrawlStarted {
+  string crawl_id = 1;
+  string url = 2;
+  string source_type = 3;    // "rss", "sitemap", "manual"
+  string source_url = 4;     // parent feed or sitemap URL
+  google.protobuf.Timestamp started_at = 5;
+}
+
+message CrawlCompleted {
+  string crawl_id = 1;
+  string url = 2;
+  int32 http_status = 3;
+  int64 response_bytes = 4;
+  int64 duration_ms = 5;
+  bool was_deduplicated = 6;
+  google.protobuf.Timestamp completed_at = 7;
+}
+
+message CrawlFailed {
+  string crawl_id = 1;
+  string url = 2;
+  string error_type = 3;     // "network", "robots", "parse", "blocked"
+  string error_message = 4;
+  google.protobuf.Timestamp failed_at = 5;
+}
+
+message FeedFetched {
+  string feed_id = 1;
+  string feed_url = 2;
+  int32 item_count = 3;
+  int32 new_items = 4;
+  google.protobuf.Timestamp fetched_at = 5;
+}
+
+message ContentScored {
+  string content_id = 1;
+  string url = 2;
+  float score = 3;
+  string category = 4;
+  repeated string topics = 5;
+  google.protobuf.Timestamp scored_at = 6;
+}
+
+// ── Trending Events ──────────────────────────────────────────────────────────
+
+message TrendingAggregationStarted {
+  string aggregation_id = 1;
+  string region = 2;
+  string category = 3;
+  string time_window = 4;     // "1h", "24h", "7d", "30d"
+  google.protobuf.Timestamp started_at = 5;
+}
+
+message TrendingAggregationCompleted {
+  string aggregation_id = 1;
+  int32 topic_count = 2;
+  google.protobuf.Timestamp completed_at = 3;
+}
+
+message TrendingTopicUpdated {
+  string topic_id = 1;
+  string topic_name = 2;
+  string region = 3;
+  float score = 4;
+  float delta = 5;            // change from previous score
+  google.protobuf.Timestamp updated_at = 6;
+}
+
+// ── Event Bus Service (gRPC) ──────────────────────────────────────────────────
+// Optional gRPC service for direct inter-service event streaming.
+
+service EventBusService {
+  // Publish an event to all subscribers.
+  rpc PublishEvent(EventEnvelope) returns (PublishResponse);
+
+  // Subscribe to events of a specific type.
+  rpc SubscribeEvents(SubscribeRequest) returns (stream EventEnvelope);
+
+  // Stream all events from this service.
+  rpc StreamEvents(StreamRequest) returns (stream EventEnvelope);
+}
+
+message PublishResponse {
+  bool success = 1;
+  string message_id = 2;
+  int32 subscriber_count = 3;
+}
+
+message SubscribeRequest {
+  string event_type = 1;
+  string consumer_group = 2;  // for consumer group semantics (Kafka-like)
+}
+
+message StreamRequest {
+  repeated string event_types = 1;  // empty = all events
+  string source_service = 2;        // filter by source
+}

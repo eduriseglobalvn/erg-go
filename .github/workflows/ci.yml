@@ -1,0 +1,169 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop, '**']
+  pull_request:
+    branches: [main, develop]
+
+env:
+  GO_VERSION: "1.22"
+  GOLANGCI_LINT_VERSION: "v1.59.1"
+
+jobs:
+  # ── Unit tests ─────────────────────────────────────────────────────────────
+  test:
+    name: Test (Go ${{ env.GO_VERSION }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+          cache-dependency-path: |
+            go.sum
+            cmd/bot-service/go.sum
+            cmd/notification-service/go.sum
+            cmd/crawler-service/go.sum
+            cmd/trending-service/go.sum
+
+      - name: Download Go module dependencies
+        run: |
+          go mod download
+          go mod tidy -C .
+
+      - name: Check formatting
+        run: |
+          if [ -n "$(gofmt -l .)" ]; then
+            echo "Files not formatted:"
+            gofmt -l .
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: Staticcheck
+        run: |
+          go install honnef.co/go/tools/cmd/staticcheck@latest
+          staticcheck ./...
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v4
+        with:
+          version: ${{ env.GOLANGCI_LINT_VERSION }}
+          args: --timeout=5m ./...
+
+      - name: Run tests (race detector)
+        run: go test ./... -race -v -count=1 -timeout=10m
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        if: success() || failure()
+        with:
+          files: ./coverage.out
+          fail_ci_if_error: true
+          verbose: true
+
+  # ── Security scan ───────────────────────────────────────────────────────────
+  security:
+    name: Security (gosec)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Install gosec
+        run: go install github.com/securego/gosec/v2/cmd/gosec@latest
+
+      - name: Run gosec
+        run: gosec -no-fail -fmt json -out gosec-results.json ./...
+
+      - name: Upload gosec results
+        uses: github/codeql-action/upload-sarif@v3
+        if: success() || failure()
+        with:
+          sarif_file: gosec-results.json
+          category: gosec
+
+  # ── Cross-compile ───────────────────────────────────────────────────────────
+  build:
+    name: Cross-compile
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        goos: [linux, darwin, windows]
+        goarch: [amd64, arm64]
+        exclude:
+          - goos: windows
+            goarch: arm64
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Build all services
+        run: |
+          CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} \
+            go build -ldflags="-s -w" \
+            -o bin/bot-service-${{ matrix.goos }}-${{ matrix.goarch }} \
+            ./cmd/bot-service
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: binaries-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: bin/
+
+  # ── Contract tests (proto) ──────────────────────────────────────────────────
+  proto:
+    name: Proto contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Install protobuf tools
+        run: |
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+
+      - name: Check proto files
+        run: |
+          if command -v protoc &> /dev/null; then
+            cd proto
+            protoc --go_out=../pkg --go_opt=paths=source_relative \
+              --go-grpc_out=../pkg --go-grpc_opt=paths=source_relative \
+              events.proto
+          else
+            echo "protoc not installed — skipping proto generation check"
+          fi

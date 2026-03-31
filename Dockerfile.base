@@ -1,0 +1,44 @@
+# Dockerfile.base — Multi-stage build for all erg services.
+# Usage: docker build -f Dockerfile.base --target builder --tag erg-base .
+
+# ── Stage 1: Builder ──────────────────────────────────────────────────────────
+FROM golang:1.22-alpine AS builder
+
+# Install build dependencies.
+RUN apk add --no-cache git ca-certificates tzdata
+
+WORKDIR /build
+
+# Download dependencies first (layer caching optimization).
+COPY go.mod go.sum* ./
+RUN if [ -f go.sum ]; then go mod download; fi
+
+# Copy source code.
+COPY . .
+
+# Build all four services in parallel by compiling each.
+ARG CGO_ENABLED=0
+ARG GOOS=linux
+
+RUN CGO_ENABLED=${CGO_ENABLED} GOOS=${GOOS} go build -ldflags="-s -w" -o /bin/bot-service ./cmd/bot-service && \
+    CGO_ENABLED=${CGO_ENABLED} GOOS=${GOOS} go build -ldflags="-s -w" -o /bin/notification-service ./cmd/notification-service && \
+    CGO_ENABLED=${CGO_ENABLED} GOOS=${GOOS} go build -ldflags="-s -w" -o /bin/crawler-service ./cmd/crawler-service && \
+    CGO_ENABLED=${CGO_ENABLED} GOOS=${GOOS} go build -ldflags="-s -w" -o /bin/trending-service ./cmd/trending-service
+
+# ── Stage 2: Runtime (scratch) ───────────────────────────────────────────────
+FROM scratch AS runtime
+
+# Copy CA certificates for HTTPS.
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+
+# Copy compiled binaries.
+COPY --from=builder /bin/ /bin/
+
+# Copy timezone data for time zone-sensitive operations.
+COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
+
+ENV TZ=UTC
+ENV GODEBUG=http2server=0
+
+# Default entrypoint — override per service in docker-compose.
+ENTRYPOINT ["/bin/bot-service"]
