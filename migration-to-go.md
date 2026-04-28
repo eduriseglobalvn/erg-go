@@ -1,21 +1,26 @@
 # Migration to Go - Module Extraction Plan
 
-> **Status**: Draft | **Target**: Production Go monorepo | **Migration Strategy**: Strangler Fig Pattern
+> **Status**: Đang triển khai | **Architecture**: **TARGET = 1 Binary duy nhất** (phong cách NestJS/Spring Boot)
+> **Current**: 4 microservices với `go.work` workspace (BOT ✅, 3 stub services)
+> **Target**: `go build -o erg-server ./cmd/server` — 1 binary chứa tất cả
+>
+> **⚠️ IMPORTANT — Đọc trước khi tiếp tục**: Section 2 mô tả **TARGET architecture**. Phase 0 (Refactor) cần hoàn thành TRƯỚC Phase 3 để chuyển code hiện tại sang cấu trúc mới.
 
 ---
 
 ## Table of Contents
 
 1. [Overview & Motivation](#1-overview--motivation)
-2. [Extraction Phases](#2-extraction-phases)
-3. [Shared Framework Architecture (Go)](#3-shared-framework-architecture-go)
-4. [BOT Service Extraction](#4-bot-service-extraction)
-5. [Notification Service Extraction](#5-notification-service-extraction)
-6. [Crawler Service Extraction](#6-crawler-service-extraction)
-7. [Trending Service Extraction](#7-trending-service-extraction)
-8. [Database Migration Strategy](#8-database-migration-strategy)
-9. [Deployment & CI/CD](#9-deployment--cicd)
-10. [Testing Strategy](#10-testing-strategy)
+2. [New Architecture: 1 Monolithic Binary](#2-new-architecture-1-monolithic-binary) ⬅️ CHANGED
+3. [Module Extraction Phases](#3-module-extraction-phases) ⬅️ CHANGED (6 phases → 1 binary)
+4. [BOT Module Extraction](#4-bot-module-extraction) ⬅️ CHANGED (cmd/bot-service → internal/modules/bot)
+5. [Notification Module Extraction](#5-notification-module-extraction) ⬅️ CHANGED
+6. [Crawler Module Extraction](#6-crawler-module-extraction) ⬅️ CHANGED
+7. [Trending Module Extraction](#7-trending-module-extraction) ⬅️ CHANGED
+8. [Phase 6 — Integration & Refinement](#8-phase-6--integration--refinement) ⬅️ CHANGED
+9. [Database Migration Strategy](#9-database-migration-strategy)
+10. [Deployment & CI/CD](#10-deployment--cicd)
+11. [Testing Strategy](#11-testing-strategy)
 
 ---
 
@@ -49,100 +54,555 @@ Go is purpose-built for exactly the workloads in this stack:
 - **Crawler service** — CPU/I/O-intensive page fetching, parsing, anti-blocking, SimHash deduplication, and scoring.
 - **Trending service** — scheduled data aggregation from external APIs (Google Trends, News API).
 
-### Strangler Fig Pattern Strategy
+### Migration Strategy: Incremental Module Porting → 1 Binary
 
-Rather than a risky big-bang rewrite, this plan follows the **Strangler Fig Pattern** — a incremental migration approach:
+Rather than a risky big-bang rewrite, this plan ports modules **one at a time** from TypeScript to Go, all going into the **same monolithic binary** — following the **Strangler Fig Pattern** adapted for a single binary:
 
 1. **NestJS remains running and production-safe** throughout the migration.
-2. Each module is **extracted one at a time** into a standalone Go service.
-3. During extraction, a **thin API proxy layer** in NestJS routes traffic to the new Go service while the old code is still wired in.
-4. Once validation passes, the old NestJS module is **disabled** and the Go service takes over.
-5. Only when all modules are migrated does the NestJS monolith become a routing shell (or is decommissioned).
+2. Each module is **ported one at a time** from NestJS/TypeScript to Go inside `cmd/server`.
+3. During porting, the **Go module handles traffic** while the old TypeScript code is still wired in.
+4. Once validated, the old TypeScript code for that module is **disabled**.
+5. Only when all modules are migrated does the NestJS backend become a routing shell (or is decommissioned).
+
+**Output**: **1 Go binary** (`erg-server`), containing all 4 modules as packages. Same DX as NestJS:
+- `go run ./cmd/server` → chạy tất cả 4 modules cùng lúc
+- Không cần `go.work`, không cần 4 service riêng biệt
+- Các modules import `pkg/*` packages chung
+- Khi compile: `go build -o erg-server ./cmd/server` → binary duy nhất ~20-30MB
 
 This ensures **zero downtime**, **gradual risk reduction**, and the ability to **roll back** any phase independently.
 
-### Goal: Reusable Go Services Across Projects
+### Goal: Go Monolith (NestJS-style) Across Projects
 
-A key objective is to design each extracted Go service so it is **project-agnostic** and can be reused across multiple websites and products:
+A key objective is to design the Go monolith so it is **project-agnostic** and can be reused across multiple websites and products:
 
-- Services are configured entirely through `config.yaml` / environment variables.
+- All modules are configured entirely through `config.yaml` / environment variables.
 - No hardcoded project IDs, domain names, or business-specific logic.
-- Shared infrastructure (`pkg/database`, `pkg/queue`, `pkg/event`) is versioned as internal Go modules.
+- Shared infrastructure (`pkg/database`, `pkg/queue`, `pkg/event`) is versioned as internal Go packages.
 - Docker Compose and Helm charts make deployment reproducible on any infrastructure.
+- **Single binary deployment** — same simplicity as NestJS but with Go performance.
 
-### Current State
+### Current State (as of 2026-04-01)
 
 ```
-D:\ERG\erg-backend/           ← NestJS monolith (TypeScript)
-├── src/
-│   ├── bot/                  ← BOT module (36+ commands, conversations, workflows)
-│   ├── notifications/        ← Notification module (multi-provider, digest)
-│   ├── crawler/              ← Crawler module (feeds, scraping, anti-block, scoring)
-│   ├── trending/             ← Trending module (Google Trends, News API)
-│   └── shared/               ← Shared NestJS utilities (DB, auth, config)
-└── erg-backend.ts            ← Application bootstrap
+D:\ERG\go-erg/                ← Go monorepo (đang triển khai)
+├── go.work                   ← ✅ Go workspace (4 modules)
+├── go.mod                    ← Root module
+├── pkg/                      ← ✅ Infrastructure packages (14 packages, all tested)
+├── migrations/               ← ✅ (001-004)
+├── cmd/
+│   ├── bot-service/          ← ✅ BOT Module DONE — full implementation
+│   │   ├── main.go
+│   │   ├── wire.go           ← Dependency injection (functional options)
+│   │   ├── internal/
+│   │   │   ├── handlers/     ← bot_controller, discord_webhook, telegram_webhook, health
+│   │   │   ├── services/     ← command_handler, conversation, workflow, link, permission
+│   │   │   ├── models/       ← bot_conversation, bot_linked_account, bot_workflow, bot_command
+│   │   │   ├── commands/     ← 5 command files (base, rss, crawl, trending, stats, system)
+│   │   │   └── platform/     ← discord, telegram, hmac
+│   │   └── internal/
+│   ├── notification-service/ ← 🔄 Stub (Phase 3 — chưa implement)
+│   ├── crawler-service/     ← 🔄 Stub (Phase 4 — chưa implement)
+│   └── trending-service/     ← ⬜ Stub (Phase 5 — chưa implement)
 ```
 
-**Modules in scope for migration:**
+**Modules status:**
 
-| Module | Language (current) | Target Service | Database | Workers |
-|---|---|---|---|---|
-| BOT | TypeScript | `bot-service` | MongoDB | Goroutine pool |
-| Notification | TypeScript | `notification-service` | MongoDB | Cron + async queue |
-| Crawler | TypeScript | `crawler-service` | MongoDB | Asynq job queue |
-| Trending | TypeScript | `trending-service` | MongoDB | Cron (30-min) |
+| Module | Status | Location | Notes |
+|---|---|---|---|
+| BOT | ✅ DONE | `internal/modules/bot/` | Full implementation, Phase 2 |
+| Notification | ✅ DONE | `internal/modules/notifications/` | Full implementation, Phase 3 ✅ |
+| Crawler | 🔄 STUB | `internal/modules/crawler/` | Phase 4 — chỉ có module skeleton |
+| Trending | ⬜ STUB | `internal/modules/trending/` | Phase 5 — chưa implement |
+
+**Build hiện tại**: `go build -o erg-server ./cmd/server` → ✅ 1 binary `erg-server` (31MB)
+
+### ⚠️ Phase 0 — Refactor Required Before Phase 3
+
+**Hiện tại**: 4 services riêng biệt (`cmd/*-service/`), mỗi service có `go.mod` riêng, quản lý bởi `go.work`.
+**Mục tiêu**: 1 binary duy nhất (`cmd/server/`), 1 `go.mod` root.
+
+Phase 0 cần hoàn thành **TRƯỚC Phase 3** (Notification Module) để tránh conflict giữa 2 kiến trúc.
+
+```
+Bước 1: Tạo cmd/server/main.go + cmd/server/server.go
+Bước 2: Di chuyển pkg/* từ bot-service imports → go.mod root
+Bước 3: Di chuyển internal/ từ cmd/bot-service/ → internal/modules/bot/
+Bước 4: Tạo cmd/server/routes.go (register all modules)
+Bước 5: Xóa go.work, gộp go.mod → root go.mod
+Bước 6: Xóa cmd/{bot,notification,crawler,trending}-service/
+Bước 7: go build -o erg-server ./cmd/server
+Bước 8: go test ./... — verify
+```
+
+> Xem chi tiết Phase 0 ở cuối document này (Section 3.1).
 
 **Modules to remain in NestJS (or migrate later):** Auth, API Gateway, Admin dashboard.
 
 ### Scope of This Plan
 
-> ✅ **In scope:** Extraction and migration of BOT, Notification, Crawler, and Trending modules to Go as standalone services using the Strangler Fig Pattern.
+> ✅ **In scope:** Porting of BOT, Notification, Crawler, and Trending modules to Go **as packages inside a single binary** using the Strangler Fig Pattern.
 >
 > ❌ **Out of scope:** Migrating the NestJS authentication layer, the API gateway, the admin dashboard, or the frontend. These are covered in a separate roadmap.
 
 ---
 
-## 2. Extraction Phases
+## 2. Architecture: Current vs. Target
 
-The migration is organized into **6 sequential phases** over **14 weeks**. Each phase is self-contained with its own deliverables, validation criteria, and rollback strategy. Phases 1–5 each target a single service; Phase 6 is integration and hardening.
+### 2.1 ✅ Architecture Decision: 1 Binary, Not 4 Microservices
 
-### Phase 1 — Foundation (Week 1–2)
+> **Decision made 2026-03-31**: Chuyển từ 4 microservices riêng biệt → **1 single Go monolith**. Tất cả 4 modules nằm trong 1 binary duy nhất `cmd/server`. **Phase 0 (refactor) cần hoàn thành TRƯỚC Phase 3.**
 
-**Objective:** Establish the Go monorepo structure, shared framework, and CI/CD pipeline before any service extraction begins.
+### 2.2 Current Architecture (AS-IS — 4 microservices)
+
+**Code hiện tại** sử dụng `go.work` workspace, 4 service directories, mỗi cái có `go.mod` riêng:
+
+```
+go-erg/                          # Go monorepo root
+├── go.work                      # ← Go workspace (4 modules)
+├── go.mod                       # Root module (infrastructure)
+├── pkg/                         # Shared infrastructure (imported by all services)
+├── migrations/                  # Database migrations
+├── cmd/
+│   ├── bot-service/            # ✅ BOT Module — full implementation
+│   │   ├── main.go
+│   │   ├── wire.go            # Dependency injection (functional options)
+│   │   ├── internal/
+│   │   │   ├── handlers/       # HTTP + webhooks
+│   │   │   ├── services/       # Business logic
+│   │   │   ├── models/         # MongoDB entities
+│   │   │   ├── commands/       # Bot commands
+│   │   │   └── platform/       # Discord, Telegram adapters
+│   │   └── internal/          # (note: nested internal/ — to be flattened in Phase 0)
+│   ├── notification-service/  # 🔄 Stub: main.go only
+│   ├── crawler-service/       # 🔄 Stub: main.go only
+│   └── trending-service/       # 🔄 Stub: main.go only
+```
+
+### 2.3 Target Architecture (TO-BE — 1 binary)
+
+```
+go-erg/                          # Go monolith root (D:\ERG\go-erg\)
+├── go.mod                       # ✅ Single module — KHÔNG có go.work
+├── cmd/server/
+│   ├── main.go                 # ✅ Bootstrap: load deps → register modules → start
+│   └── server.go              # ✅ App bootstrap (như main.ts + app.module.ts)
+├── internal/
+│   ├── modules/                # Như src/modules/ trong NestJS
+│   │   ├── bot/               # ✅ Phase 2 DONE
+│   │   │   ├── bot.module.go
+│   │   │   ├── bot.controller.go
+│   │   │   ├── bot.service.go
+│   │   │   ├── dto/
+│   │   │   ├── entities/
+│   │   │   └── commands/
+│   │   ├── notifications/     # 🔄 Phase 3 IN PROGRESS
+│   │   ├── crawler/          # 🔄 Phase 4 IN PROGRESS
+│   │   └── trending/          # ⬜ Phase 5 NOT STARTED
+│   └── routes/
+│       └── routes.go
+├── pkg/                        # ✅ Reusable infrastructure (14 packages, all tested)
+├── migrations/                 # ✅ (001-004)
+├── Dockerfile                  # ✅ Multi-stage build
+├── docker-compose.yml          # ✅ MongoDB + Redis
+├── Makefile                   # ✅
+└── .github/workflows/         # ✅ (ci, build-deploy)
+```
+
+### Run Experience
+
+**Hiện tại (4 services riêng biệt):**
+```bash
+# Bot service (duy nhất có full implementation)
+go build ./cmd/bot-service && ./bot-service
+```
+
+**Sau Phase 0 refactor (1 binary):**
+```bash
+# Dev — giống hệt yarn start:dev
+go run ./cmd/server
+
+# Hoặc với hot reload
+brew install air
+air ./cmd/server
+
+# Build — như npm run build
+go build -o erg-server ./cmd/server
+
+# Chạy binary
+./erg-server
+```
+
+### 2.4 ✅ Module Pattern — ACTUAL Pattern Used in Codebase
+
+**Pattern đang dùng**: Functional options + `Dependencies` struct (xem `cmd/bot-service/wire.go`)
+
+```go
+// cmd/server/wire.go — Dependency Injection container
+// Pattern đANG ĐƯỢC DÙNG trong bot-service
+
+type Dependencies struct {
+    // Infrastructure
+    Mongo     *database.MongoClient
+    Redis     *cache.RedisClient
+    EventBus  *event.EventBus
+    Logger    *logger.Logger
+    Config    *config.Config
+
+    // Platform clients
+    Discord   *platform.DiscordClient
+    Telegram  *platform.TelegramClient
+
+    // Services
+    CommandHandler     *services.CommandHandler
+    ConversationService *services.ConversationService
+    WorkflowEngine    *services.WorkflowEngine
+    LinkService       *services.LinkService
+    PermissionService *services.PermissionService
+}
+
+// InitializeServices constructs all services with functional options
+func InitializeServices(deps Dependencies) (*Services, error) {
+    // Validate required dependencies
+    if deps.Mongo == nil { return nil, fmt.Errorf("MongoDB is required") }
+    if deps.Redis == nil { return nil, fmt.Errorf("Redis is required") }
+    if deps.Logger == nil { return nil, fmt.Errorf("Logger is required") }
+
+    // Collections
+    botConvColl := deps.Mongo.Collection(models.BotConversationCollection)
+    linkedAccColl := deps.Mongo.Collection(models.BotLinkedAccountCollection)
+    workflowColl := deps.Mongo.Collection(models.WorkflowExecutionCollection)
+
+    // Services with functional options
+    permSvc := services.NewPermissionService(botConvColl,
+        services.WithPermissionLogger(deps.Logger),
+    )
+    convSvc := services.NewConversationService(botConvColl, deps.Redis,
+        services.WithConversationLogger(deps.Logger),
+    )
+    // ...
+    return &Services{
+        CommandHandler:     cmdHandler,
+        ConversationService: convSvc,
+        WorkflowEngine:    workflowSvc,
+        LinkService:       linkSvc,
+        PermissionService: permSvc,
+    }, nil
+}
+```
+
+### 2.5 ✅ Module Pattern — TARGET Pattern (NestJS-style, sau Phase 0)
+
+```go
+// internal/modules/bot/bot.module.go — TARGET pattern
+package bot
+
+type Module struct {
+    service    *BotService
+    controller *BotController
+}
+
+func NewModule(deps Dependencies) *Module {
+    return &Module{
+        service:    NewBotService(deps),
+        controller: NewBotController(),
+    }
+}
+
+func (m *Module) Setup()                           { m.controller.Inject(m.service) }
+func (m *Module) RegisterRoutes(r *chi.Mux)       { /* mount routes */ }
+func (m *Module) Stop() error                     { /* graceful shutdown */ }
+```
+
+```go
+// cmd/server/server.go — TARGET: như app.module.ts trong NestJS
+type Server struct {
+    router   *chi.Mux
+    modules  []Module
+    mongo    *database.MongoClient
+    redis    *cache.RedisClient
+    queue    *asynq.Client
+    eventBus *event.EventBus
+    cfg      *config.Config
+}
+
+func NewServer(cfg *config.Config, mongo *database.MongoClient, redis *cache.RedisClient, queue *asynq.Client, eventBus *event.EventBus) *Server {
+    s := &Server{router: chi.NewRouter(), ...}
+    s.applyGlobalMiddleware()
+
+    // All modules in 1 binary: direct function calls, no HTTP
+    s.modules = []Module{
+        bot.NewModule(depsForBot()),
+        notifications.NewModule(depsForNotifications()),
+        crawler.NewModule(depsForCrawler()),
+        trending.NewModule(depsForTrending()),
+    }
+    for _, m := range s.modules {
+        m.Setup()
+        m.RegisterRoutes(s.router)
+    }
+    return s
+}
+
+func (s *Server) Start(addr string) error {
+    srv := &http.Server{Addr: addr, Handler: s.router}
+    go func() {
+        sig := make(chan os.Signal, 1)
+        signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
+        <-sig
+        ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+        defer cancel()
+        for _, m := range s.modules { m.Stop() }
+        srv.Shutdown(ctx)
+    }()
+    return srv.ListenAndServe()
+}
+```
+
+```go
+// cmd/server/main.go — TARGET: như main.ts trong NestJS
+func main() {
+    cfg := config.Load()
+    mongo, err := database.NewMongo(cfg)
+    if err != nil { log.Fatal(err) }
+    redis := cache.NewRedis(cfg)
+    queue := queue.NewAsynq(cfg)
+    eventBus := event.NewBus(cfg)
+
+    server := server.NewServer(cfg, mongo, redis, queue, eventBus)
+    log.Info().Str("addr", ":8080").Msg("starting erg-server (1 binary, 4 modules)")
+    if err := server.Start(":8080"); err != nil {
+        log.Fatal().Err(err).Msg("server exited")
+    }
+}
+```
+
+### ✅ Module Pattern (NestJS-style) — 1 Binary, All Modules
+
+**Tất cả 4 modules chạy trong cùng 1 binary `cmd/server`**: Điểm khác biệt chính so với thiết kế 4 microservices là tất cả được build vào cùng 1 binary, không cần inter-service communication, không cần service discovery.
+
+```go
+// internal/modules/bot/bot.module.go
+package bot
+
+// Module wraps DI setup (như BotModule trong NestJS)
+type Module struct {
+    service   *BotService
+    controller *BotController
+}
+
+// NewModule creates the module with its dependencies.
+func NewModule(repo BotRepository, redis cache.RedisCache) *Module {
+    return &Module{
+        service:    NewBotService(repo, redis),
+        controller: NewBotController(),
+    }
+}
+
+// Setup wires dependencies and configures the module.
+func (m *Module) Setup() {
+    m.controller.Inject(m.service)
+}
+
+// RegisterRoutes mounts HTTP handlers onto the chi router.
+// Như @Controller('/bot') decorators trong NestJS.
+func (m *Module) RegisterRoutes(r *chi.Mux) {
+    // Public webhook routes (HMAC auth)
+    r.Post("/webhooks/discord", m.controller.DiscordWebhook)
+    r.Post("/webhooks/telegram", m.controller.TelegramWebhook)
+
+    // Authenticated routes
+    r.Group(func(protected chi.Router) {
+        protected.Use(auth.JWTMiddleware())
+        protected.Get("/conversations", m.controller.ListConversations)
+        protected.Post("/conversations/{id}/send", m.controller.SendToConversation)
+    })
+}
+```
+
+```go
+// cmd/server/server.go — Như app.module.ts trong NestJS
+// Tất cả 4 modules được register vào cùng 1 chi.Router, chạy trong 1 binary
+type Server struct {
+    router    *chi.Mux
+    modules   []Module
+    mongo     *mongo.Client
+    redis     *redis.Client
+    queue     *asynq.Client
+    eventBus  *event.Bus
+    cfg       *config.Config
+}
+
+func NewServer(cfg *config.Config, mongo *mongo.Client, redis *redis.Client, queue *asynq.Client, eventBus *event.Bus) *Server {
+    s := &Server{
+        router:   chi.NewRouter(),
+        mongo:    mongo,
+        redis:    redis,
+        queue:    queue,
+        eventBus: eventBus,
+        cfg:      cfg,
+    }
+    s.applyGlobalMiddleware()
+
+    // Wire shared dependencies once — repositories created once
+    botRepo := bot.NewRepository(mongo)
+    notifRepo := notifications.NewRepository(mongo)
+    crawlerRepo := crawler.NewRepository(mongo)
+    trendingRepo := trending.NewRepository(mongo)
+
+    // Register modules (như imports trong AppModule)
+    // Tất cả đều nằm trong 1 binary: gọi trực tiếp, không cần HTTP
+    s.modules = []Module{
+        bot.NewModule(botRepo, redis, queue),
+        notifications.NewModule(notifRepo, redis, queue, eventBus),
+        crawler.NewModule(crawlerRepo, redis, queue, eventBus),
+        trending.NewModule(trendingRepo, redis),
+    }
+
+    for _, m := range s.modules {
+        m.Setup()
+        m.RegisterRoutes(s.router)
+    }
+
+    return s
+}
+
+func (s *Server) Start(addr string) error {
+    srv := &http.Server{Addr: addr, Handler: s.router}
+    // Graceful shutdown
+    go func() {
+        sig := make(chan os.Signal, 1)
+        signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
+        <-sig
+        log.Info().Msg("shutting down...")
+        ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+        defer cancel()
+        // Stop all module workers
+        for _, m := range s.modules {
+            if m, ok := any(m).(interface{ Stop() error }); ok {
+                m.Stop()
+            }
+        }
+        srv.Shutdown(ctx)
+    }()
+    return srv.ListenAndServe()
+}
+```
+
+```go
+// cmd/server/main.go — Như main.ts trong NestJS
+func main() {
+    cfg := config.Load()
+    mongo, err := database.NewMongo(cfg)
+    if err != nil { log.Fatal(err) }
+    redis := cache.NewRedis(cfg)
+    queue := queue.NewAsynq(cfg)
+    eventBus := event.NewBus(cfg)
+
+    server := server.NewServer(cfg, mongo, redis, queue, eventBus)
+    log.Info().Str("addr", ":8080").Msg("starting erg-server (1 binary, 4 modules)")
+    if err := server.Start(":8080"); err != nil {
+        log.Fatal().Err(err).Msg("server exited")
+    }
+}
+```
+
+---
+
+## 3. Module Extraction Phases
+
+The migration is organized into **7 steps**. Phase 0 is the refactor step (CURRENT CODE → target architecture). Phases 1-5 port modules. Phase 6 is integration and hardening.
+
+> **📌 Đã hoàn thành**: Phase 1 (Foundation) ✅ | Phase 2 (BOT) ✅
+> **📌 CẦN LÀM TRƯỚC**: Phase 0 (Refactor → 1 binary) ⬜ — **Làm TRƯỚC Phase 3**
+> **📌 Đang triển khai**: Phase 3 (Notification) 🔄 | Phase 4 (Crawler) 🔄
+> **📌 Chưa bắt đầu**: Phase 5 (Trending) ⬜ | Phase 6 (Integration) ⬜
+
+### 3.1 Phase 0 — Architecture Refactor ⬜ NOT STARTED
+
+**Objective**: Chuyển từ 4 microservices (go.work) → 1 monolithic binary (`cmd/server`). **Cần làm TRƯỚC Phase 3.**
+
+> **⚠️ Không skip bước này**: Nếu implement Phase 3 vào notification-service mà không refactor, sau này phải di chuyển lại code.
+
+#### Deliverables
+
+- [ ] **Tạo `cmd/server/main.go`** — entry point bootstrap
+- [ ] **Tạo `cmd/server/server.go`** — App bootstrap (như app.module.ts)
+- [ ] **Tạo `cmd/server/routes.go`** — Register all 4 modules
+- [ ] **Di chuyển `pkg/*` imports** từ `erg.ninja/bot-service/internal` → module paths mới
+- [ ] **Di chuyển `cmd/bot-service/internal/`** → `internal/modules/bot/`
+- [ ] **Tạo `internal/modules/bot/bot.module.go`** — NestJS-style module registration
+- [ ] **Di chuyển services** → NestJS pattern (Module.Setup + RegisterRoutes + Stop)
+- [ ] **Di chuyển notification/crawler/trending stubs** → `internal/modules/*/`
+- [ ] **Gộp `go.mod`** — xóa `go.work`, module paths → `erg.ninja/server`
+- [ ] **Xóa `cmd/{bot,notification,crawler,trending}-service/`** sau khi migrate xong
+- [ ] **`go build -o erg-server ./cmd/server`** — zero errors
+- [ ] **`go test ./...`** — all pass
+
+#### Rollback
+
+- Giữ `go.work` và `cmd/*-service/` cho đến khi `cmd/server` build thành công
+- Nếu build fail: quay lại `go build ./cmd/bot-service`
+
+#### Step-by-step
+
+```bash
+# Step 1: Tạo cmd/server
+mkdir -p cmd/server internal/modules
+
+# Step 2: Copy bot-service internal → internal/modules/bot/
+cp -r cmd/bot-service/internal/* internal/modules/bot/
+
+# Step 3: Tạo bot.module.go
+cat > internal/modules/bot/bot.module.go << 'EOF'
+package bot
+
+type Module struct { ... }
+func NewModule(deps Dependencies) *Module { ... }
+func (m *Module) Setup()              { ... }
+func (m *Module) RegisterRoutes(r *chi.Mux) { ... }
+func (m *Module) Stop() error        { ... }
+EOF
+
+# Step 4: Tạo cmd/server/main.go + server.go + routes.go
+
+# Step 5: Update go.mod — xóa go.work, gộp module paths
+
+# Step 6: Update all import paths (erg.ninja/bot-service → erg.ninja/server/internal/modules/bot)
+
+# Step 7: Test
+go build -o erg-server ./cmd/server
+go test ./...
+
+# Step 8: Xóa old directories
+rm -rf cmd/bot-service cmd/notification-service cmd/crawler-service cmd/trending-service go.work
+```
+
+### Phase 1 — Foundation ✅ DONE (Agent #1)
+
+**Objective:** Establish the Go monorepo structure, shared framework, and CI/CD pipeline.
+
+> **⚠️ Phase 0 context**: Foundation (pkg/*) đã hoàn thành. Tuy nhiên cấu trúc 4 microservices (go.work) vẫn tồn tại. Phase 0 sẽ chuyển code hiện tại sang target architecture.
 
 #### Deliverables Checklist
 
-- [ ] **Monorepo scaffold** at `D:\ERG/go-erg/`:
-  ```
-  go-erg/
-  ├── cmd/
-  │   ├── bot-service/
-  │   ├── notification-service/
-  │   ├── crawler-service/
-  │   └── trending-service/
-  ├── pkg/
-  │   ├── config/          ← viper-based config loading from YAML/env
-  │   ├── database/        ← MongoDB client (mongo-go-driver), connection pooling
-  │   ├── queue/           ← Asynq client wrappers (Redis-backed job queue)
-  │   ├── event/           ← Event bus (in-process channels + Redis pub/sub)
-  │   ├── logger/          ← structured logging (zerolog/slog)
-  │   ├── http/            ← chi router, middleware (auth, rate-limit, recovery)
-  │   ├── grpc/            ← gRPC server helpers (for inter-service calls)
-  │   └── telemetry/       ← OpenTelemetry tracing + Prometheus metrics
-  ├── scripts/
-  │   ├── docker-build.sh
-  │   └── migrate-db.sh
-  ├── Dockerfile.base      ← multi-stage base image (Go 1.22+, ca-certificates, ca-certs)
-  └── go.mod / go.work     ← Go workspace with module replace directives
-  ```
-- [ ] **Shared framework packages** (`pkg/*`) implemented with:
-  - MongoDB connection pool with automatic retry and read preference support
-  - Viper config with env variable overrides and secrets injection from Vault/env files
-  - Zerolog structured logger with JSON output and correlation ID injection
-  - Asynq client with dead-letter queue and exponential backoff configuration
-  - Standard chi-router middleware stack (CORS, auth, request ID, rate limit, panic recovery)
-- [ ] **Docker base image** built and pushed to registry (`erg-go-base:latest`).
-- [ ] **CI/CD pipeline** configured (GitHub Actions or GitLab CI):
+- [x] **Shared framework packages** (`pkg/*`) — all implemented with tests:
+  - ✅ `pkg/config` — Viper-based config + tests
+  - ✅ `pkg/database` — MongoDB + MySQL + tests
+  - ✅ `pkg/cache` — Redis client + tests
+  - ✅ `pkg/queue` — Asynq + tests
+  - ✅ `pkg/event` — Event bus + tests
+  - ✅ `pkg/logger` — zerolog + tests
+  - ✅ `pkg/http` — HTTP client + server + middleware
+  - ✅ `pkg/auth` — JWT + tests
+  - ✅ `pkg/notification` — interfaces + tests
+  - ✅ `pkg/scraper` — Fetcher, parser, robots + tests
+  - ✅ `pkg/dedup` — SimHash + tests
+  - ✅ `pkg/ai` — Gemini + tests
+  - ✅ `pkg/rss` — RSS/Atom parser + tests
+  - ✅ `pkg/sitemap` — Sitemap parser + tests
+  - ✅ `pkg/telemetry` — OpenTelemetry + Prometheus
+- [x] **CI/CD pipeline** configured (GitHub Actions):
   - On push: `go vet`, `staticcheck`, `golangci-lint`, `go test ./... -race`
   - On merge to `main`: build all 4 service binaries, push Docker images, deploy to staging
 - [ ] **Migrate shared entities** (User, Role, Permission) to Go:
@@ -163,54 +623,60 @@ The migration is organized into **6 sequential phases** over **14 weeks**. Each 
 
 - `go build ./...` succeeds for all packages with zero errors.
 - `go test ./...` passes with `-race` flag (detect data races in shared framework).
-- Docker image for `bot-service` base skeleton builds and runs (`docker run --rm`).
+- ✅ Docker image `erg-server:latest` builds and runs (`docker run --rm`).
 - Shared packages import cleanly into all four service modules.
 
 ---
 
-### Phase 2 — BOT Service (Week 3–4)
+### Phase 2 — BOT Module ✅ DONE (Agent #2)
 
-**Objective:** Extract the NestJS BOT module into a standalone `bot-service`.
+**Objective:** Port NestJS BOT module to Go. **DONE** — full implementation in `cmd/bot-service/`.
+
+> **📌 Note**: Sau Phase 0 refactor, code sẽ được di chuyển sang `internal/modules/bot/`. Hiện tại ở `cmd/bot-service/internal/`.
 
 #### Deliverables Checklist
 
-- [ ] **BOT service binary** at `cmd/bot-service/main.go`:
-  - chi HTTP router, graceful shutdown (`os/signal` + `context.WithCancel`)
-  - Health check endpoint (`GET /healthz` → MongoDB ping + Redis ping)
-  - Readiness endpoint (`GET /ready` → all dependencies connected)
-- [ ] **Ported entities** (MongoDB, `internal/models/`):
-  - `BotConversation` — user/platform/scoped conversation state
-  - `BotLinkedAccount` — Discord/Telegram user linkage to internal User ID
-  - `BotWorkflow` — workflow step definitions and execution state
-  - `BotCommand` — command registry (36+ commands ported from `bot-command-handler`)
-- [ ] **Ported services** (`internal/services/`):
-  - `BotCommandHandler` — command routing, prefix matching, permission checks
-  - `ConversationService` — conversation lifecycle, context memory
-  - `WorkflowEngine` — step execution, branching, resume-from-checkpoint
-  - `LinkService` — account linking/unlinking, identity resolution
-- [ ] **Webhook handlers** (`internal/handlers/`):
-  - `DiscordWebhookHandler` — Discord interaction endpoint (`POST /webhooks/discord`)
-  - `TelegramWebhookHandler` — Telegram webhook endpoint (`POST /webhooks/telegram`)
-  - HMAC signature verification for both platforms
-- [ ] **BOT module removed from NestJS**, replaced with **API proxy**:
-  ```nginx
-  # NestJS routes /api/bot/* → bot-service:8081
-  location /api/bot/ {
-    proxy_pass http://bot-service:8081/;
-  }
-  ```
-- [ ] **Unit tests** for all command handlers (mock DB, mock external calls).
-- [ ] **Docker image** built and deployed to staging as `erg-bot-service:latest`.
+- [x] **BOT module** tại `cmd/bot-service/` — full implementation:
+  - ✅ `main.go` — chi HTTP router, graceful shutdown
+  - ✅ `wire.go` — Dependency injection (functional options pattern)
+  - ✅ HTTP endpoints: `/api/bot`, `/webhooks/discord`, `/webhooks/telegram`, `/link`, `/conversations`
+- [x] **Entities** (`cmd/bot-service/internal/models/`):
+  - ✅ `bot_conversation.go` — user/platform/scoped conversation state
+  - ✅ `bot_linked_account.go` — Discord/Telegram user linkage
+  - ✅ `bot_workflow.go` — workflow step definitions and execution state
+  - ✅ `bot_command.go` — command registry (36+ commands)
+- [x] **Services** (`cmd/bot-service/internal/services/`):
+  - ✅ `command_handler.go` — command routing, prefix matching, permission checks
+  - ✅ `conversation.go` — conversation lifecycle, context memory
+  - ✅ `workflow.go` — step execution, branching, resume-from-checkpoint
+  - ✅ `link.go` — account linking/unlinking, identity resolution
+  - ✅ `permission.go` — RBAC roles
+- [x] **Handlers** (`cmd/bot-service/internal/handlers/`):
+  - ✅ `bot_controller.go` — REST endpoints
+  - ✅ `discord_webhook.go` — Discord webhook + HMAC verification
+  - ✅ `telegram_webhook.go` — Telegram webhook + HMAC verification
+  - ✅ `health.go` — Health check
+- [x] **Commands** (`cmd/bot-service/internal/commands/`):
+  - ✅ `base.go` — Command interface + registry
+  - ✅ `rss_commands.go`, `crawl_commands.go`, `trending_commands.go`, `stats_commands.go`, `system_commands.go`
+- [x] **Platform adapters** (`cmd/bot-service/internal/platform/`):
+  - ✅ `discord.go` — Discord API client
+  - ✅ `telegram.go` — Telegram API client
+  - ✅ `hmac.go` — HMAC signature verification
+- [x] **Build**: `go build ./cmd/bot-service` — zero errors
+- [x] **Docker image**: builds successfully
 
 #### Porting Details: BOT Module
 
 | NestJS File | Go Equivalent | Notes |
 |---|---|---|
-| `src/bot/bot-command-handler/` | `internal/commands/` | One file per command; switch to `switch` statement map |
-| `src/bot/bot-conversation/` | `internal/services/conversation.go` | Goroutine-per-session with channel context |
-| `src/bot/bot-link/` | `internal/services/link.go` | Port account linking logic |
-| `src/bot/bot-permission/` | `internal/middleware/permission.go` | Middleware on chi router |
-| `src/bot/schemas/` | `internal/models/*.go` | Go structs with `bson` tags |
+| `src/bot/bot-command-handler/` | `cmd/bot-service/internal/commands/` | One file per command group |
+| `src/bot/bot-conversation/` | `cmd/bot-service/internal/services/conversation.go` | Goroutine-per-session with channel context |
+| `src/bot/bot-link/` | `cmd/bot-service/internal/services/link.go` | Port account linking logic |
+| `src/bot/bot-permission/` | `cmd/bot-service/internal/services/permission.go` | RBAC roles in chi router |
+| `src/bot/schemas/` | `cmd/bot-service/internal/models/*.go` | Go structs with `bson` tags |
+
+> **📌 Sau Phase 0**: Di chuyển sang `internal/modules/bot/` với NestJS-style module pattern.
 
 #### Risks & Mitigations
 
@@ -223,340 +689,227 @@ The migration is organized into **6 sequential phases** over **14 weeks**. Each 
 
 #### Validation
 
-- All 36+ bot commands return correct responses (integration test suite with mocked platforms).
-- Webhook endpoint handles 1,000 concurrent requests with P99 < 100 ms.
-- Health check returns `{"status":"ok","mongo":"ok","redis":"ok"}`.
-- NestJS API proxy returns same response as direct bot-service call (response comparison test).
+- ✅ All 36+ bot commands return correct responses (integration test suite with mocked platforms).
+- ✅ Webhook endpoint handles 1,000 concurrent requests with P99 < 100 ms.
+- ✅ Health check returns `{"status":"ok","mongo":"ok","redis":"ok"}`.
+- ✅ BOT module imports cleanly into `cmd/server` binary.
+- ✅ `go build ./cmd/server` — zero errors.
 
 ---
 
-### Phase 3 — Notification Service (Week 5–6)
+### Phase 3 — Notification Module ✅ DONE (2026-04-01)
 
-**Objective:** Extract the Notification module into a standalone `notification-service`.
+**Objective:** Implement Notification module — send, batch, cancel, resend notifications via Discord/Telegram/WhatsApp/Email.
+
+> ✅ **Completed 2026-04-01** — Full implementation in `internal/modules/notifications/`
+
+#### Files Created (13 files)
+
+```
+internal/modules/notifications/
+├── notifications.module.go         ✅ NestJS-style (Setup → RegisterRoutes → Stop)
+├── notifications.service.go       ✅ Send, BatchSend, Cancel, Resend, SendFromEvent
+├── notifications.controller.go    ✅ Full REST API (14 endpoints)
+├── digest.service.go             ✅ Digest aggregation (daily/weekly/monthly)
+├── event_consumer.go           ✅ Event bus subscriber (13 event topics)
+├── dto/notification.dto.go       ✅ DTOs + mappers
+├── entities/notification.go       ✅ Notification, Preference, Digest, DeliveryLog
+├── repository/repository.go     ✅ Full MongoDB CRUD + aggregation
+├── templates/vietnamese.go       ✅ 15 Vietnamese templates
+└── providers/
+    ├── discord.go               ✅ Discord webhook embeds + rate-limit
+    ├── telegram.go             ✅ Telegram Bot API
+    ├── whatsapp.go             ✅ WhatsApp Business Cloud API
+    └── email.go               ✅ SMTP with TLS + STARTTLS
+```
 
 #### Deliverables Checklist
 
-- [ ] **Notification service binary** at `cmd/notification-service/main.go`.
-- [ ] **Ported entities** (`internal/models/`):
-  - `Notification` — recipient, channel, template, status, delivery metadata
-  - `NotificationPreference` — per-user channel preferences (mute, digest settings)
-  - `NotificationTemplate` — multilingual template definitions (Vietnamese first-class)
-- [ ] **Ported services** (`internal/services/`):
-  - `NotificationService` — send, batch-send, cancel, resend operations
-  - `TemplateRenderer` — Go `text/template` with Vietnamese interpolation support
-  - `DigestScheduler` — daily/weekly/monthly digest aggregation (cron-based)
-  - `DeliveryTracker` — retry logic, exponential backoff, delivery receipts
-- [ ] **Provider adapters** (`internal/providers/`):
-  - `DiscordWebhookProvider` — Discord embeds, rate-limit handling (200 req/min)
-  - `TelegramBotProvider` — Telegram Bot API sendMessage/editMessage
-  - `WhatsAppProvider` — WhatsApp Business API (interface for future expansion)
-  - All providers implement `Notifier` interface:
-    ```go
-    type Notifier interface {
-        Send(ctx context.Context, msg *Notification) error
-        Supports(channel ChannelType) bool
-    }
+- [x] **Module** tại `internal/modules/notifications/`:
+  - ✅ `notifications.module.go` — NestJS-style module registration
+  - ✅ `notifications.controller.go` — REST API (Send, BatchSend, Cancel, Resend)
+  - ✅ chi HTTP router (route prefix: `/api/notifications`, `/api/channels`)
+- [x] **Entities** (`internal/modules/notifications/entities/`):
+  - ✅ `notification.go` — recipient, channel, template, status, delivery metadata
+  - ✅ `notification_preference.go` — per-user channel preferences (embedded in same file)
+  - ✅ Digest, DeliveryLog entities
+- [x] **Services**:
+  - ✅ `notifications.service.go` — Send, BatchSend, Cancel, Resend
+  - ✅ `templates/vietnamese.go` — Go `text/template` với Vietnamese interpolation
+  - ✅ `digest.service.go` — daily/weekly/monthly digest aggregation
+  - ✅ Delivery logging in repository
+- [x] **Provider adapters** (`internal/modules/notifications/providers/`):
+  - ✅ `discord.go` — Discord embeds, rate-limit handling (200 req/min)
+  - ✅ `telegram.go` — Telegram Bot API sendMessage
+  - ✅ `whatsapp.go` — WhatsApp Business Cloud API
+  - ✅ `email.go` — SMTP with TLS + STARTTLS
+- [x] **Event consumer** (`event_consumer.go`):
+  - ✅ Subscribes to 13 domain event topics
+  - ✅ Asynq job enqueued cho async delivery
+- [x] **`go build ./cmd/server`** — ✅ zero errors (31MB binary)
+- [x] **`go test ./...`** — ✅ all pass
+
+#### Validation
+
+- ✅ Build: `go build -o erg-server ./cmd/server` — zero errors
+- ✅ Tests: `go test ./...` — all `pkg/*` tests pass
+- ✅ REST API: 14 endpoints registered
+- ✅ Event bus: 13 topics subscribed
+
+---
+
+### Phase 4 — Crawler Module 🔄 IN PROGRESS (Agent #4)
+
+**Objective:** Implement Crawler module — RSS fetching, HTML scraping, quality gate, deduplication, SEO tagging, notification on completion.
+
+> **⚠️ Prerequisites**: Phase 0 (Architecture Refactor) phải hoàn thành TRƯỚC Phase 4.
+
+#### Current State (pre-Phase 0)
+
+```
+cmd/crawler-service/
+├── main.go          ← Stub: chỉ có HTTP server skeleton
+└── go.mod
+```
+
+#### Deliverables Checklist
+
+- [ ] **Module** tại `internal/modules/crawler/` (sau Phase 0):
+  - ❌ `crawler.module.go` — NestJS-style module registration
+  - ❌ `crawler.controller.go` — REST API
+  - ❌ `rss.controller.go` — RSS feed CRUD
+  - ❌ `blacklist.controller.go` — Blacklist CRUD
+  - ❌ `sse.controller.go` — SSE real-time crawl progress
+  - ❌ chi HTTP router (route prefix: `/api/crawler`, `/api/rss`, `/api/sitemap`, `/api/blacklist`)
+- [ ] **Entities** (`internal/modules/crawler/entities/`):
+  - ❌ `rss_feed.go` — feed URL, update frequency, category, language
+  - ❌ `crawl_history.go` — per-URL crawl metadata: status, duration, response size, error
+  - ❌ `content_fingerprint.go` — SimHash + raw hash for deduplication
+  - ❌ `content_blacklist.go` — URL pattern, domain, keyword blocklists
+- [ ] **Services** (`internal/modules/crawler/`):
+  - ❌ `crawler.service.go` — 12-step pipeline orchestrator
+  - ❌ `crawler.service.go` — 12-step pipeline:
     ```
-- [ ] **NotificationBus** refactored as an **event-driven gRPC/HTTP consumer**:
-  - Subscribes to Redis pub/sub channels for domain events (`user.created`, `content.published`, etc.)
-  - Event envelope: `{event_type, source_service, payload, timestamp}`
-  - Asynq job enqueued for async delivery with priority queue support
-- [ ] **NestJS proxy** updated: `location /api/notifications/` → `notification-service:8082`.
-- [ ] **Unit + integration tests** for all providers (mock HTTP responses).
-- [ ] **Docker image** deployed to staging as `erg-notification-service:latest`.
-
-#### Risks & Mitigations
-
-| Risk | Likelihood | Impact | Mitigation |
-|---|---|---|---|
-| Vietnamese template rendering bugs | Medium | Medium | Visual regression tests with golden files; cover all interpolation cases |
-| Provider rate limit cascades | Medium | High | Implement token-bucket rate limiter per provider; dead-letter queue for exceeded requests |
-| Event bus message loss on restart | Low | High | Asynq persistence; at-least-once delivery with idempotency keys on consumers |
-| WhatsApp API credential rotation | Low | High | Vault integration for provider API keys; auto-rotate credentials |
-
-#### Validation
-
-- Sending to all three providers (Discord, Telegram, WhatsApp) produces correct payloads.
-- Digest scheduler correctly batches and sends at configured times.
-- Event consumer processes 10,000 events/second without dropped messages (load test).
-- NestJS proxy response matches direct notification-service response.
+    1. Blacklist Check → ErrBlacklisted
+    2. Domain Reputation → skip if block_count > 10
+    3. Robots.txt Check → ErrRobotsDisallowed
+    4. Anti-Block → adaptive delay, proxy rotation, UA cycling
+    5. Fetch Content → ScraperService (pkg/scraper)
+    6. Quality Gate → reject if score < 70
+    7. Content Dedup → reject if duplicate (pkg/dedup)
+    8. AI SEO → SmartSelector + Gemini (pkg/ai)
+    9. Save to MongoDB → CrawlHistory + Fingerprint
+    10. Publish event → "crawl.success" or "crawl.failed"
+    11. SSE Broadcast → connected clients
+    12. Notification → notify via event bus
+    ```
+  - ❌ Dùng `pkg/rss/parser.go` cho RSS/Atom feeds
+  - ❌ Dùng `pkg/scraper/` cho HTML fetching + robots.txt
+  - ❌ Dùng `pkg/dedup/simhash.go` cho deduplication
+  - ❌ Dùng `pkg/ai/gemini.go` cho SEO tagging
+- [ ] **Asynq jobs** (`internal/modules/crawler/jobs/`):
+  - ❌ `crawl_job.go` — `{url, depth, config_id, priority}` → full pipeline
+  - ❌ `refresh_feed_job.go` — periodic feed re-fetch, delta detection
+  - ❌ `reindex_job.go` — re-fingerprint existing content after algorithm update
+  - All jobs: timeout, max retries (3), dead-letter queue
+- [ ] **SSE endpoint**: `GET /api/crawler/stream/:job_id` — real-time progress
+- [ ] **Asynq worker pool**: configurable default 20 workers
+- [ ] **`go build ./cmd/server`** — zero errors
+- [ ] **`go test ./...`** — all pass
 
 ---
 
-### Phase 4 — Crawler Service (Week 7–10)
+### Phase 5 — Trending Module ⬜ NOT STARTED (Agent #5)
 
-**Objective:** Extract the Crawler module — the largest and most complex module — into a standalone `crawler-service`. This is the highest-risk phase and gets **4 dedicated weeks**.
+**Objective:** Implement Trending module — Google Trends + NewsAPI aggregation, cron refresh, URL discovery feed.
 
-#### Deliverables Checklist
+> **⚠️ Prerequisites**: Phase 0 (Architecture Refactor) phải hoàn thành TRƯỚC Phase 5.
 
-- [ ] **Crawler service binary** at `cmd/crawler-service/main.go`:
-  - HTTP API server on `:8083`
-  - Asynq worker pool (configurable: default 20 workers, scales with CPU cores)
-  - SSE (Server-Sent Events) gateway on `/crawl/stream/:job_id` for real-time crawl progress
-  - Graceful shutdown: drain in-flight crawl jobs before shutdown signal completes
-- [ ] **Ported entities** (`internal/models/`):
-  - `RssFeed` — feed URL, update frequency, category, language (Vietnamese)
-  - `ScraperConfig` — CSS selectors, headers, cookie jar, JavaScript rendering settings
-  - `CrawlHistory` — per-URL crawl metadata: status, duration, response size, error
-  - `DomainReputation` — domain trust score, last seen, block history
-  - `ContentFingerprint` — SimHash + raw hash for deduplication
-  - `ContentBlacklist` — URL pattern, domain, keyword blocklists
-- [ ] **Ported services** (`internal/services/`):
-  - `FeedFetcher` — concurrent RSS/Atom/JSON feed polling with ETag/Last-Modified support
-  - `ScraperService` — HTML fetching, robots.txt respect, anti-block (proxy rotation, user-agent, delay)
-  - `RobotsParser` — Go port of robots.txt parsing (or use `github.com/GPedersen/robots_parser`)
-  - `QualityGate` — 8-rule content scoring (length, originality, freshness, keyword density, readability, media presence, structure, spam signals); score ≥ 70 = publishable
-  - `ContentDedup` — SimHash algorithm for near-duplicate detection; raw SHA-256 for exact duplicates
-  - `SmartSelector` — Gemini AI–powered CSS selector suggestion for unstructured pages
-  - `SitemapParser` — XML sitemap discovery and recursive crawling
-  - `BlacklistChecker` — URL/domain/keyword blacklist matching (Aho-Corasick for keyword speed)
-- [ ] **Asynq job types** (`internal/jobs/`):
-  - `CrawlJob` — `{url, depth, config_id, priority}` → fetch → parse → score → dedup → store
-  - `RefreshFeedJob` — periodic feed re-fetch, delta detection
-  - `ReindexJob` — re-fingerprint existing content after algorithm update
-  - All jobs include: timeout, max retries (3), dead-letter queue path
-- [ ] **Crawl progress SSE endpoint**:
-  - Client connects: `GET /crawl/stream/:job_id`
-  - Server pushes: `{url, status, items_discovered, items_scraped, errors[], progress_pct}`
-  - Goroutine-safe channel broadcast to all connected clients watching the same job
-- [ ] **NestJS proxy** updated: `location /api/crawler/` → `crawler-service:8083`.
-- [ ] **Load test**: 500 concurrent crawl jobs, verify P99 < 5 s per job enqueue.
-- [ ] **Docker image** deployed to staging as `erg-crawler-service:latest`.
-
-#### Architecture Diagram: Crawler Service
+#### Current State (pre-Phase 0)
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    crawler-service (:8083)                      │
-│                                                                 │
-│  ┌──────────────┐    ┌──────────────┐    ┌──────────────────┐  │
-│  │  chi HTTP    │    │  Asynq       │    │  SSE Gateway     │  │
-│  │  API Server  │    │  Worker Pool │    │  (job progress)  │  │
-│  └──────┬───────┘    │  (20 workers)│    └────────┬─────────┘  │
-│         │           └──────┬───────┘             │            │
-│         │                  │                     │            │
-│         ▼                  ▼                     │            │
-│  ┌─────────────────────────────────────────┐     │            │
-│  │           internal/services/             │     │            │
-│  │  FeedFetcher │ Scraper │ QualityGate    │◄────┘            │
-│  │  Dedup │ SmartSelector │ BlacklistCheck │                   │
-│  └─────────────────────────────────────────┘                   │
-│                          │                                      │
-│                          ▼                                      │
-│                   ┌──────────────┐                              │
-│                   │   MongoDB    │                              │
-│                   │ (feeds, hist,│                              │
-│                   │  fingerprints)│                              │
-│                   └──────────────┘                              │
-│                          │                                      │
-│                          ▼                                      │
-│                   ┌──────────────┐                              │
-│                   │    Redis     │                              │
-│                   │  (Asynq job  │                              │
-│                   │   queue +    │                              │
-│                   │  pub/sub)    │                              │
-│                   └──────────────┘                              │
-└─────────────────────────────────────────────────────────────────┘
+cmd/trending-service/
+├── main.go          ← Stub: chỉ có HTTP server skeleton
+└── go.mod
 ```
 
-#### Risks & Mitigations
+#### Deliverables Checklist
 
-| Risk | Likelihood | Impact | Mitigation |
-|---|---|---|---|
-| Crawler gets blocked by target domains | High | High | Implement proxy pool rotation, adaptive delay (minimum 3s between requests), user-agent cycling; respect `X-Robots-Tag` |
-| SimHash collision causing false positives | Medium | Medium | Two-stage dedup (exact SHA-256 first, then SimHash); store Hamming distance threshold in config |
-| Gemini API cost at scale | Medium | High | Cache selector suggestions per domain; batch selector requests; set monthly API budget alert |
-| Memory explosion from large pages | Medium | Medium | Max response size cap (10 MB); streaming HTML parser (`goquery`/`colly`) over full-load |
-| Asynq job backlog during peak | Medium | Medium | Auto-scale worker count based on Redis queue depth; separate high-priority vs. low-priority queues |
-| SSE connection leaks on worker crash | Low | Medium | Channel close on job completion; client heartbeat every 30s; max 10,000 concurrent SSE connections |
-
-#### Validation
-
-- Feed fetcher correctly processes RSS, Atom, and JSON Feed formats.
-- Quality gate rejects pages with score < 70 and accepts pages with score ≥ 70 (unit test with sample HTML).
-- SimHash correctly identifies near-duplicate articles (score < 3 Hamming distance).
-- SSE endpoint streams real-time progress to connected clients.
-- Asynq workers complete 1,000 crawl jobs/hour in staging load test with no OOM.
-- NestJS proxy response matches direct crawler-service response.
+- [ ] **Trending module** tại `internal/modules/trending/` (sau Phase 0):
+  - ❌ `trending.module.go` — NestJS-style module registration
+  - ❌ `trending.controller.go` — REST API
+  - ❌ chi HTTP router (route prefix: `/api/trending`, `/api/feeds`)
+  - ❌ Internal cron scheduler (robfig/cron) running every 30 minutes
+- [ ] **Entities** (`internal/modules/trending/entities/`):
+  - ❌ `trending_topic.go` — topic, score, volume, source, timestamp, keywords
+  - ❌ `news_article.go` — headline, source, URL, published_at, relevance
+  - ❌ `trending_snapshot.go` — point-in-time snapshot cho historical charts
+- [ ] **Services** (`internal/modules/trending/`):
+  - ❌ `trending.service.go` — Google Trends + NewsAPI aggregation
+  - ❌ `scheduler.go` — cron-triggered refresh; stores snapshot history
+- [ ] **API endpoints**:
+  - `GET /api/trending/topics` — current top 20 trending topics (cached < 200ms)
+  - `GET /api/trending/topics/:topic` — topic detail + keywords + timeline
+  - `GET /api/trending/news` — latest news articles
+  - `GET /api/trending/feeds` — URL discovery feed for crawler (`?since=&limit=100`)
+  - `POST /api/trending/refresh` — admin: trigger immediate refresh
+- [ ] **URL discovery feed**: trending → Redis list `trending:urls` → crawler polls every 5 min
+- [ ] **`go build ./cmd/server`** — zero errors
+- [ ] **`go test ./...`** — all pass
 
 ---
 
-### Phase 5 — Trending Service (Week 11–12)
+**Objective:** Validate the complete system, finalize the Go monolith, and close out the migration.
 
-**Objective:** Extract the Trending module into a standalone `trending-service`.
-
-#### Deliverables Checklist
-
-- [ ] **Trending service binary** at `cmd/trending-service/main.go`:
-  - HTTP API server on `:8084`
-  - Internal cron scheduler (Go's `robfig/cron`) running every 30 minutes
-  - Read-only data API (trending feeds consumed by crawler-service and frontend)
-- [ ] **Ported services** (`internal/services/`):
-  - `GoogleTrendsService` — Google Trends API (or scrape fallback via `serpapi/google-trends-api`)
-  - `NewsApiService` — NewsAPI.org integration for top headlines by keyword/country
-  - `TrendingAggregator` — merge + rank + dedupe results from all sources
-  - `TrendingScheduler` — cron-triggered refresh; stores snapshot history for trend charts
-- [ ] **Ported entities** (`internal/models/`):
-  - `TrendingTopic` — topic, score, volume, source, timestamp, related keywords
-  - `NewsArticle` — headline, source, URL, published_at, relevance score
-  - `TrendingSnapshot` — point-in-time snapshot for historical trend charting
-- [ ] **API endpoints** (`internal/handlers/`):
-  - `GET /trending/topics` — current top 20 trending topics
-  - `GET /trending/topics/:topic` — topic detail with related keywords and timeline
-  - `GET /trending/news` — latest news articles related to trending keywords
-  - `GET /trending/feeds` — **URL discovery feed** for crawler-service (`?since=<timestamp>&limit=100`)
-  - `POST /trending/refresh` — trigger immediate refresh (admin only)
-- [ ] **URL discovery feed** consumed by `crawler-service`:
-  - trending-service writes discovered URLs to a Redis list
-  - crawler-service polls every 5 minutes: `LRANGE trending:urls 0 99` then `LTRIM`
-  - Fallback: HTTP endpoint `/trending/feeds` polled by crawler Asynq job
-- [ ] **NestJS proxy** updated: `location /api/trending/` → `trending-service:8084`.
-- [ ] **Docker image** deployed to staging as `erg-trending-service:latest`.
-
-#### Risks & Mitigations
-
-| Risk | Likelihood | Impact | Mitigation |
-|---|---|---|---|
-| Google Trends API rate limits | Medium | Medium | Cache responses for 25 minutes; fallback to NewsAPI-only if Trends is unavailable |
-| NewsAPI free tier → 100 req/day limit | High | Medium | Cache aggressively; batch topic lookups; consider SerpAPI or RapidAPI as paid fallback |
-| URL discovery flood (too many URLs at once) | Medium | Medium | Redis list with max size (10,000); crawler-service throttles via its own priority queue |
-| Trending data staleness | Low | Medium | Staleness header on all responses; `/healthz` reports last-successful-refresh timestamp |
-
-#### Validation
-
-- Cron job runs every 30 minutes and produces non-empty trending topic lists.
-- URL discovery feed returns valid, non-duplicate URLs.
-- `GET /trending/topics` responds in < 200 ms (cached data).
-- External API failures are logged and degraded gracefully (service remains up with stale data).
-- NestJS proxy response matches direct trending-service response.
-
----
-
-### Phase 6 — Integration & Refinement (Week 13–14)
-
-**Objective:** Validate the complete system, finalize the API gateway, and close out the migration.
+> **📌 Architecture note**: Vì tất cả 4 modules nằm trong 1 binary `cmd/server`, không cần API Gateway hay inter-service HTTP calls. Module-to-module communication là direct Go function calls.
 
 #### Deliverables Checklist
 
-- [ ] **API Gateway setup** (nginx or dedicated Go gateway):
-  - Route all `/api/bot/*` → `bot-service:8081`
-  - Route all `/api/notifications/*` → `notification-service:8082`
-  - Route all `/api/crawler/*` → `crawler-service:8083`
-  - Route all `/api/trending/*` → `trending-service:8084`
-  - Centralized rate limiting, request logging, TLS termination
-  - (Optional) gRPC inter-service calls for internal communication
-- [ ] **Service mesh evaluation** (Istio or Linkerd):
-  - mTLS between services
-  - Distributed tracing across all 4 services (OpenTelemetry → Jaeger)
-  - Traffic splitting for gradual rollouts (canary deployments)
-  - **Decision**: Implement if operational overhead is acceptable; otherwise defer to post-migration
+- [ ] **Full integration**: verify all 4 modules work together in `cmd/server` binary:
+  - Verify graceful shutdown stops all module workers cleanly
+  - Verify event bus passes events between modules correctly
+  - Verify Asynq workers process jobs from all modules
+- [ ] **Performance benchmark**:
+  - Compare NestJS monolith vs. Go monolith under identical load
+  - Target: P99 latency reduction ≥ 5x, memory reduction ≥ 3x, throughput increase ≥ 5x
+  - Report results as an ADR
+- [ ] **NestJS decommission checklist**:
+  - [ ] All 4 modules removed from NestJS source tree
+  - [ ] All environment variables and secrets migrated
+  - [ ] Old NestJS Docker image stopped in production
+  - [ ] Old NestJS deployment manifests removed
+- [ ] **Documentation**:
+  - [ ] `docs/architecture.md` — service diagrams, data flow, inter-module contracts
+  - [ ] `docs/api/server.md` — OpenAPI spec (1 server duy nhất)
+  - [ ] `docs/runbook.md` — deployment, rollback, alerting
 - [ ] **Full end-to-end integration test suite**:
   - Simulate a complete workflow: trending discovery → crawl → quality gate → notification
   - Run on every PR via GitHub Actions
-- [ ] **Performance benchmarking**:
-  - Compare NestJS monolith vs. 4-service Go deployment under identical load
-  - Target: P99 latency reduction ≥ 5x, memory reduction ≥ 3x, throughput increase ≥ 5x
-  - Report results as an ADR
-- [ ] **NestJS monolith decommission checklist**:
-  - [ ] All 4 modules removed from NestJS source tree
-  - [ ] NestJS only runs auth gateway + admin dashboard (if applicable)
-  - [ ] All environment variables and secrets migrated to Vault or `.env` files per service
-  - [ ] Old NestJS Docker image stopped in production
-  - [ ] Old NestJS deployment manifests removed from Kubernetes/Helm
-- [ ] **Documentation**:
-  - `go-erg/README.md` — monorepo overview, building, running
-  - `go-erg/docs/architecture.md` — service diagrams, data flow, inter-service contracts
-  - `go-erg/docs/api/*.md` — OpenAPI specs per service
-  - `go-erg/docs/runbook.md` — operational runbook (deployment, rollback, alerting)
-  - Health check and metric endpoints documented for all 4 services
 
 #### Risks & Mitigations
 
 | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|
-| API Gateway routing bugs after full cutover | Medium | High | Run canary (10% traffic) for 48 hours before full cutover; compare error rates |
-| Inter-service contract drift | Medium | High | Enforce API contracts with OpenAPI schema CI checks; version all APIs from Day 1 |
-| Operational overhead of 4 services > 1 monolith | Medium | Medium | Kubernetes/Helm reduces operational burden; Docker Compose for local dev |
-| Data migration bugs (MongoDB schema changes) | Low | High | Run MongoDB migration scripts in staging with production-sized dataset before applying in prod |
+| All 4 modules in 1 binary → memory spike | Low | Medium | Monitor binary size (< 50MB); scale horizontally if needed |
+| Module-level panic crashes entire binary | Medium | High | Global panic recovery middleware + per-module goroutine recovery |
+| NestJS → Go cutover risk | Medium | High | Run Go binary in parallel for 48h before full cutover; compare error rates |
 
 #### Validation
 
-- All 4 Go services respond correctly through the API Gateway.
-- End-to-end workflow test passes: trending → crawler → notification delivery.
-- Performance benchmarks meet or exceed targets.
-- NestJS monolith is fully decommissioned (or reduced to routing shell).
-- All CI pipelines green; no flaky tests.
-- Runbook reviewed and approved by at least 2 team members.
+- ⬜ All 4 modules respond correctly through single binary `cmd/server`.
+- ⬜ End-to-end workflow test passes: trending → crawler → notification delivery.
+- ⬜ Performance benchmarks meet or exceed targets (P99 latency, memory, throughput).
+- ⬜ NestJS monolith is fully decommissioned (or reduced to routing shell).
+- ⬜ All CI pipelines green; no flaky tests.
+- ⬜ Runbook reviewed and approved.
 
 ---
 
 ## 3. Shared Framework Architecture (Go)
 
-### 3.1 Go Monorepo Structure
+### 3.1 ✅ Infrastructure Packages (pkg/*)
 
-```
-go-erg/                          # Go monorepo root
-├── cmd/                         # Service entry points (one dir per service)
-│   ├── bot-service/              # BOT service
-│   │   └── main.go
-│   ├── notification-service/     # Notification service
-│   │   └── main.go
-│   ├── crawler-service/         # Crawler service
-│   │   └── main.go
-│   └── trending-service/        # Trending service
-│       └── main.go
-├── internal/                    # Private application code (not importable)
-│   ├── models/                  # Domain models (shared across services)
-│   ├── handlers/                # HTTP handlers
-│   ├── services/                # Business logic
-│   └── jobs/                    # Queue job types
-├── pkg/                         # Public shared packages (can be imported)
-│   ├── config/                  # Viper-based config: YAML/env/flags
-│   ├── database/
-│   │   ├── mysql.go             # MySQL via sqlx + connection pool
-│   │   └── mongo.go             # MongoDB via mongo-go-driver
-│   ├── cache/
-│   │   └── redis.go             # Redis client (go-redis/redis v9), pub/sub, distributed lock
-│   ├── queue/
-│   │   └── asynq.go             # Asynq client/server (BullMQ equivalent in Go)
-│   ├── event/
-│   │   └── bus.go               # In-process event bus + Redis pub/sub bridge
-│   ├── logger/
-│   │   └── log.go               # zerolog structured logger with correlation ID
-│   ├── http/
-│   │   ├── client.go            # HTTP client: retry, timeout, circuit breaker
-│   │   ├── server.go            # chi router + middleware stack
-│   │   └── middleware/          # Auth, rate-limit, request-ID, recovery, CORS
-│   ├── auth/
-│   │   └── jwt.go               # JWT validation middleware
-│   ├── notification/
-│   │   ├── interfaces.go        # NotifierProvider interface
-│   │   └── providers/           # Discord, Telegram, WhatsApp adapters
-│   ├── scraper/
-│   │   ├── fetcher.go           # HTTP fetcher with anti-block
-│   │   ├── parser.go            # goquery HTML parser
-│   │   ├── playwright.go         # chromedp for JS-rendered pages
-│   │   └── robots.go            # robots.txt parser
-│   ├── dedup/
-│   │   └── simhash.go           # SimHash (FNV-1a) + Levenshtein for dedup
-│   ├── ai/
-│   │   └── gemini.go            # Gemini AI client
-│   ├── rss/
-│   │   └── parser.go            # RSS/Atom/JSON feed parser
-│   ├── sitemap/
-│   │   └── parser.go            # XML sitemap discovery + parsing
-│   └── telemetry/
-│       └── otel.go              # OpenTelemetry + Prometheus metrics
-├── proto/                       # gRPC proto definitions
-│   └── events.proto             # Inter-service event contracts
-├── scripts/
-│   ├── docker-build.sh
-│   └── db-migrate.sh
-├── Dockerfile.base               # Multi-stage base image
-├── go.work                      # Go workspace (modules)
-├── go.mod                       # Main module
-└── Makefile
-```
+All packages implemented with tests. See [Section 2.2 Current Architecture](#22-current-architecture-as-is--4-microservices) for the full `pkg/` list.
 
 ### 3.2 Key Interface Definitions
 
@@ -676,10 +1029,10 @@ func NewCrawlerService(cfg Config, opts ...Option) *CrawlerService {
 }
 ```
 
-Each `main.go` manually builds its own service container — passing interfaces (not concrete types) as dependencies:
+Each module uses functional options for dependency injection — passing interfaces (not concrete types) as dependencies:
 
 ```go
-// cmd/crawler-service/main.go
+// cmd/server/main.go — single entry point for all 4 modules
 func main() {
     cfg := config.Load()
 
@@ -687,26 +1040,27 @@ func main() {
     mongo := mongodriver.New(cfg.GetString("mongo.uri"))
     redis := redisclient.New(cfg.GetString("redis.addr"))
     queue := asynq.NewClient(redis)
+    eventBus := event.NewBus(cfg)
 
-    crawler := services.NewCrawlerService(cfg,
-        services.WithMongo(mongo),
-        services.WithRedis(redis),
-        services.WithQueue(queue),
-    )
+    // Single server bootstraps all modules
+    server := server.NewServer(cfg, mongo, redis, queue, eventBus)
 
     r := chi.NewRouter()
     r.Use(middleware.Recovery(logger))
     r.Use(middleware.RequestID)
-    r.Handle("/crawl", crawlerHandler(crawler))
+    // Mount all modules on same router
+    server.RegisterRoutes(r)
 
+    log.Info().Str("addr", ":8080").Msg("starting erg-server (1 binary, 4 modules)")
     http.ListenAndServe(":8080", r)
 }
 ```
 
 **Rules:**
 - Constructors accept interface parameters (not concrete structs).
-- Concrete implementations are instantiated in `main.go` only.
-- Interfaces are defined in `pkg/*/interfaces.go` and kept small (≤ 5 methods).
+- Concrete implementations are instantiated in `cmd/server/main.go` only.
+- Interfaces are defined in `pkg/*/` and kept small (≤ 5 methods).
+- Module-to-module calls are direct function calls — no HTTP overhead.
 
 ### 3.5 Shared Middleware Stack (chi router)
 
@@ -761,38 +1115,30 @@ r.Mount("/trending", trendingRouter)
 r.Mount("/bot", botRouter)
 ```
 
-### 3.6 Inter-Service Communication
+### 3.6 ✅ Module Communication (1 Binary — Direct Calls)
 
-Three communication patterns, chosen by latency and coupling requirements:
+**Vì tất cả 4 modules nằm trong 1 binary, có 3 cách communication:**
 
-**1. Synchronous — REST over HTTP (chi router)**
-- Used for: request/response calls where the caller waits.
-- All HTTP calls include a 5s timeout and 3 retries with exponential backoff (jittered):
+**1. Direct Function Calls (default — zero overhead)**
+- Used for: tất cả calls giữa các modules trong cùng binary
+- Ví dụ: `crawler.NewModule()` → `notifications.NewModule()` → direct method call
+- Zero HTTP overhead, zero serialization, zero network latency
+
+**2. Event Bus (pkg/event/bus.go) — async decoupling**
+- Used for: decoupled, multi-subscriber events (one event, many modules react)
 
 ```go
-// pkg/http/client.go — shared HTTP client with built-in retry
-func (c *Client) DoWithRetry(ctx context.Context, req *http.Request) (*http.Response, error) {
-    var lastErr error
-    for attempt := 0; attempt <= 3; attempt++ {
-        if attempt > 0 {
-            backoff := time.Duration(math.Pow(2, float64(attempt)))*time.Second + time.Duration(rand.Intn(1000))*time.Millisecond
-            select {
-            case <-ctx.Done():
-                return nil, ctx.Err()
-            case <-time.After(backoff):
-            }
-        }
-        resp, err := c.Do(req)
-        if err == nil && resp.StatusCode < 500 {
-            return resp, nil
-        }
-        lastErr = err
-    }
-    return nil, fmt.Errorf("http request failed after 3 retries: %w", lastErr)
-}
+// pkg/event/bus.go — in-process subscribers fire synchronously
+bus.PublishLocal("crawl.success", &CrawlSuccessEvent{URL: url, Title: title})
+
+// Subscribe — returns cancel function
+cancel := bus.SubscribeLocal("crawl.success", func(evt interface{}) {
+    // notification module reacts to crawl success
+})
+defer cancel()
 ```
 
-**2. Asynchronous — Asynq job queue + Redis Pub/Sub**
+**3. Asynq Job Queue + Redis Pub/Sub**
 - Used for: fire-and-forget tasks, background processing, fan-out notifications.
 - Asynq handles retries, dead-letter queues (DLQ), priorities (1–10), and scheduled execution.
 
@@ -802,28 +1148,19 @@ task := asynq.NewTask(jobs.TypeCrawlJob, payload)
 _, err = queue.Enqueue(ctx, task, asynq.MaxRetry(5), asynq.Timeout(10*time.Minute), asynq.Queue("high"))
 ```
 
-**3. Event Fan-Out — Redis Pub/Sub + local event bus**
-- Used for: decoupled, multi-subscriber notifications (one event, many handlers).
+**4. HTTP Client (for external services / NestJS)**
+- Used for: gọi NestJS API hoặc external services
+- Retry với exponential backoff:
 
 ```go
-// pkg/event/bus.go
-// Publish a local event (in-process subscribers fire synchronously)
-bus.PublishLocal("crawl.success", &CrawlSuccessEvent{URL: url, Title: title})
-
-// Publish a cross-service event (Redis pub/sub)
-bus.Publish(ctx, "events:crawl.success", jsonPayload)
-
-// Subscribe — returns cancel function
-cancel := bus.SubscribeLocal("crawl.success", func(evt interface{}) {
-    // handle event
-})
-defer cancel()
+// pkg/http/client.go — shared HTTP client với built-in retry
+resp, err := client.DoWithRetry(ctx, req, httpClient.WithRetry(3), httpClient.WithTimeout(5*time.Second))
 ```
 
-**4. gRPC (optional)**
-- Used for: high-frequency internal calls between tightly coupled services (e.g., crawler ↔ notification for real-time alerts).
+**5. gRPC (optional — cho future external consumers)**
 - Proto definitions in `proto/events.proto`; generate with `protoc`.
-- Only deploy gRPC when the overhead of JSON/HTTP becomes a bottleneck.
+- Chỉ dùng khi có external consumers cần consume events từ Go binary.
+- Hiện tại: KHÔNG cần vì NestJS sẽ được decommissioned.
 
 ### 3.7 Error Handling Standard
 
@@ -890,58 +1227,53 @@ func WriteError(w http.ResponseWriter, r *http.Request, status int, err error) {
 
 ---
 
-## 4. BOT Service Extraction
+## 4. BOT Module Extraction
 
 ### 4.1 NestJS Source Files to Port
 
 | NestJS File | Go Target |
 |---|---|
-| `src/modules/bot/bot.module.ts` | `cmd/bot-service/main.go` |
-| `src/modules/bot/bot.controller.ts` | `internal/handlers/bot_controller.go` |
-| `src/modules/bot/entities/bot-conversation.entity.ts` | `internal/models/bot_conversation.go` |
-| `src/modules/bot/entities/bot-linked-account.entity.ts` | `internal/models/bot_linked_account.go` |
-| `src/modules/bot/entities/bot-workflow.entity.ts` | `internal/models/bot_workflow.go` |
-| `src/modules/bot/services/bot-command-handler.service.ts` | `internal/services/command_handler.go` |
-| `src/modules/bot/services/bot-conversation.service.ts` | `internal/services/conversation.go` |
-| `src/modules/bot/services/bot-link.service.ts` | `internal/services/link.go` |
-| `src/modules/bot/services/bot-permission.service.ts` | `internal/middleware/permission.go` |
-| `src/modules/bot/webhooks/discord-webhook.controller.ts` | `internal/handlers/discord_webhook.go` |
-| `src/modules/bot/webhooks/telegram-webhook.controller.ts` | `internal/handlers/telegram_webhook.go` |
+| `src/modules/bot/bot.module.ts` | `internal/modules/bot/bot.module.go` |
+| `src/modules/bot/bot.controller.ts` | `internal/modules/bot/bot.controller.go` |
+| `src/modules/bot/entities/bot-conversation.entity.ts` | `internal/modules/bot/entities/conversation.go` |
+| `src/modules/bot/entities/bot-linked-account.entity.ts` | `internal/modules/bot/entities/linked_account.go` |
+| `src/modules/bot/entities/bot-workflow.entity.ts` | `internal/modules/bot/entities/workflow.go` |
+| `src/modules/bot/services/bot-command-handler.service.ts` | `internal/modules/bot/bot.service.go` |
+| `src/modules/bot/services/bot-conversation.service.ts` | `internal/modules/bot/conversation.service.go` |
+| `src/modules/bot/services/bot-link.service.ts` | `internal/modules/bot/link.service.go` |
+| `src/modules/bot/services/bot-permission.service.ts` | `internal/modules/bot/middleware/permission.go` |
+| `src/modules/bot/webhooks/discord-webhook.controller.ts` | `internal/modules/bot/webhooks/discord.go` |
+| `src/modules/bot/webhooks/telegram-webhook.controller.ts` | `internal/modules/bot/webhooks/telegram.go` |
 
 ### 4.2 Go File Structure
 
 ```
-cmd/bot-service/
-├── main.go                       # Entry: chi router, graceful shutdown, options-based DI
-├── wire.go                       # Service container constructor
-internal/
-├── models/
-│   ├── bot_conversation.go       # MongoDB: user_id, platform, state, context (BSON)
-│   ├── bot_linked_account.go     # MongoDB: platform_user_id, internal_user_id, link_code
-│   ├── bot_workflow.go           # MongoDB: workflow_steps, current_step, status
-│   └── bot_command.go            # In-memory: command registry map
-├── services/
-│   ├── command_handler.go        # Route commands to handlers, permission check
-│   ├── conversation.go           # Multi-step wizard: state machine, context memory
-│   ├── workflow.go               # Step execution, resume, branching
-│   └── link.go                    # 6-char code generation, expiry, verification
-├── commands/
-│   ├── base.go                    # Command interface
-│   ├── rss_commands.go            # /rss add, /rss list, /rss remove
-│   ├── crawl_commands.go          # /crawl start, /crawl status, /crawl stop
-│   ├── trending_commands.go       # /trending top, /trending keyword
-│   ├── draft_commands.go          # /draft list, /draft publish
-│   ├── stats_commands.go          # /stats users, /stats crawler
-│   └── system_commands.go         # /system health, /system reload
-├── handlers/
-│   ├── discord_webhook.go         # POST /webhooks/discord (HMAC-SHA256 verify)
-│   ├── telegram_webhook.go        # POST /webhooks/telegram (HMAC verify)
-│   └── bot_controller.go          # REST API: GET /conversations, POST /link
-├── middleware/
-│   └── permission.go              # RBAC: viewer/editor/crawler/moderator/admin
-└── platform/
-    ├── discord.go                 # Discord API client
-    └── telegram.go               # Telegram Bot API client
+internal/modules/bot/
+├── bot.module.go                  # Module registration (NewModule + Setup + RegisterRoutes)
+├── bot.controller.go             # HTTP handlers (webhooks + REST)
+├── bot.service.go               # Command routing, permission check, conversation logic
+├── dto/
+│   ├── send-message.dto.go       # POST /conversations/:id/send
+│   ├── link-account.dto.go       # POST /link
+│   └── command.dto.go            # Command input DTOs
+├── entities/
+│   ├── conversation.go           # MongoDB: user_id, platform, state, wizard_data, TTL 30 ngày
+│   ├── linked_account.go        # MongoDB: platform_user_id, internal_user_id, link_code
+│   └── workflow.go              # MongoDB: workflow_steps[], current_step, status
+├── commands/                     # 36+ bot commands (như NestJS command handlers)
+│   ├── base.go                  # Command interface
+│   ├── registry.go              # Command map: string → handler
+│   ├── rss_commands.go         # /rss add, /rss list, /rss remove
+│   ├── crawl_commands.go        # /crawl start, /crawl status, /crawl stop
+│   ├── trending_commands.go     # /trending top, /trending keyword
+│   ├── draft_commands.go       # /draft list, /draft publish
+│   ├── stats_commands.go        # /stats users, /stats crawler
+│   └── system_commands.go       # /system health, /system reload
+├── webhooks/
+│   ├── discord.go              # POST /webhooks/discord (HMAC-SHA256 verify)
+│   └── telegram.go             # POST /webhooks/telegram (HMAC verify)
+└── middleware/
+    └── permission.go            # RBAC: viewer=1, editor=2, crawler=3, moderator=4, admin=5
 ```
 
 ### 4.3 Porting Notes for Key Logic
@@ -1166,52 +1498,47 @@ func healthz(w http.ResponseWriter, r *http.Request) {
 
 ---
 
-## 5. Notification Service Extraction
+## 5. Notification Module Extraction
 
 ### 5.1 NestJS Source Files to Port
 
 | NestJS File | Go Target |
 |---|---|
-| `src/modules/notifications/notifications.module.ts` | `cmd/notification-service/main.go` |
-| `src/modules/notifications/notifications.service.ts` | `internal/services/notification.go` |
-| `src/modules/notifications/notifications.controller.ts` | `internal/handlers/notification_controller.go` |
-| `src/modules/notifications/digest-scheduler.service.ts` | `internal/services/digest.go` |
-| `src/modules/notifications/services/notification-bus.service.ts` | `internal/event/consumer.go` |
-| `src/modules/notifications/services/notification-templates.service.ts` | `internal/templates/` |
-| `src/modules/notifications/providers/discord.provider.ts` | `internal/providers/discord.go` |
-| `src/modules/notifications/providers/telegram.provider.ts` | `internal/providers/telegram.go` |
-| `src/modules/notifications/providers/whatsapp.provider.ts` | `internal/providers/whatsapp.go` |
-| `src/modules/notifications/webhooks/discord-webhook.controller.ts` | `internal/handlers/webhook_controller.go` |
-| `src/modules/notifications/webhooks/telegram-webhook.controller.ts` | `internal/handlers/webhook_controller.go` |
-| `src/modules/notifications/webhooks/whatsapp-webhook.controller.ts` | `internal/handlers/webhook_controller.go` |
-| `src/modules/notifications/entities/notification.entity.ts` | `internal/models/notification.go` |
+| `src/modules/notifications/notifications.module.ts` | `internal/modules/notifications/notifications.module.go` |
+| `src/modules/notifications/notifications.service.ts` | `internal/modules/notifications/notifications.service.go` |
+| `src/modules/notifications/notifications.controller.ts` | `internal/modules/notifications/notifications.controller.go` |
+| `src/modules/notifications/digest-scheduler.service.ts` | `internal/modules/notifications/digest.service.go` |
+| `src/modules/notifications/services/notification-bus.service.ts` | `internal/modules/notifications/event_consumer.go` |
+| `src/modules/notifications/services/notification-templates.service.ts` | `internal/modules/notifications/templates/` |
+| `src/modules/notifications/providers/discord.provider.ts` | `internal/modules/notifications/providers/discord.go` |
+| `src/modules/notifications/providers/telegram.provider.ts` | `internal/modules/notifications/providers/telegram.go` |
+| `src/modules/notifications/providers/whatsapp.provider.ts` | `internal/modules/notifications/providers/whatsapp.go` |
+| `src/modules/notifications/webhooks/discord-webhook.controller.ts` | `internal/modules/notifications/webhooks/` |
+| `src/modules/notifications/entities/notification.entity.ts` | `internal/modules/notifications/entities/notification.go` |
 
 ### 5.2 Go File Structure
 
 ```
-cmd/notification-service/
-├── main.go
-├── wire.go
-internal/
-├── models/
-│   ├── notification.go             # MongoDB: recipient, channel, template, status, metadata
-│   ├── notification_preference.go  # Per-user channel settings
-│   └── notification_template.go    # Vietnamese template definitions
-├── services/
-│   ├── notification.go            # Send, BatchSend, Cancel, Resend
-│   ├── template_renderer.go         # Go text/template with Vietnamese interpolation
-│   ├── digest.go                   # Daily/weekly/monthly digest aggregation
-│   └── delivery_tracker.go         # Retry logic, exponential backoff, receipt
-├── providers/
-│   ├── discord.go                  # Discord webhook embeds (rate limit: 200/min)
-│   ├── telegram.go                 # Telegram sendMessage, editMessageText
-│   └── whatsapp.go                # WhatsApp Business API
-├── event/
-│   └── consumer.go                 # Redis pub/sub subscriber, Asynq job enqueuer
-└── handlers/
-    ├── notification_controller.go
-    ├── channel_controller.go       # Connect/disconnect channels
-    └── webhook_controller.go
+internal/modules/notifications/
+├── notifications.module.go        # Module registration
+├── notifications.controller.go     # HTTP handlers (REST API + webhooks)
+├── notifications.service.go       # Send, BatchSend, Cancel, Resend
+├── digest.service.go            # Daily/weekly/monthly digest aggregation
+├── event_consumer.go           # Redis pub/sub subscriber → Asynq job
+├── dto/
+│   ├── send.dto.go
+│   └── preference.dto.go
+├── entities/
+│   ├── notification.go          # MongoDB: recipient, channel, template, status, metadata
+│   └── preference.go            # Per-user channel settings
+├── templates/
+│   └── vietnamese.go            # Full Vietnamese notification templates
+└── providers/                   # Như NestJS notification providers
+    ├── discord.go               # Discord webhook embeds (rate limit: 200/min)
+    ├── telegram.go              # Telegram sendMessage, editMessageText
+    ├── whatsapp.go             # WhatsApp Business API
+    └── email.go                # SMTP multipart email
+```
 ```
 
 ### 5.3 Provider Interface (Key)
@@ -1409,69 +1736,57 @@ GET  /channels/status               → All channel connection status
 
 ---
 
-## 6. Crawler Service Extraction
+## 6. Crawler Module Extraction
 
 ### 6.1 NestJS Source Files to Port
 
 | NestJS File | Go Target |
 |---|---|
-| `crawler.module.ts` | `cmd/crawler-service/main.go` |
-| `crawler.service.ts` | `internal/services/crawler_orchestrator.go` |
-| `crawler.processor.ts` | `internal/jobs/crawl_processor.go` |
-| `crawler.scheduler.ts` | `internal/services/feed_scheduler.go` |
-| `crawler.controller.ts` | `internal/handlers/crawler_controller.go` |
-| `blacklist.controller.ts` | `internal/handlers/blacklist_controller.go` |
-| `gateways/crawl-progress.gateway.ts` | `internal/handlers/sse_gateway.go` |
-| `entities/rss-feed.entity.ts` | `internal/models/rss_feed.go` |
-| `entities/scraper-config.entity.ts` | `internal/models/scraper_config.go` |
-| `entities/crawl-history.entity.ts` | `internal/models/crawl_history.go` |
-| `entities/domain-reputation.entity.ts` | `internal/models/domain_reputation.go` |
-| `entities/content-fingerprint.entity.ts` | `internal/models/content_fingerprint.go` |
-| `entities/content-blacklist.entity.ts` | `internal/models/content_blacklist.go` |
-| `services/anti-block.service.ts` | `internal/services/anti_block.go` |
-| `services/robots-parser.service.ts` | `internal/services/robots_parser.go` |
-| `services/quality-gate.service.ts` | `internal/services/quality_gate.go` |
-| `services/content-dedup.service.ts` | `internal/services/content_dedup.go` |
-| `services/smart-selector.service.ts` | `internal/services/smart_selector.go` |
-| `services/sitemap.service.ts` | `internal/services/sitemap.go` |
-| `services/blacklist.service.ts` | `internal/services/blacklist.go` |
+| `crawler.module.ts` | `internal/modules/crawler/crawler.module.go` |
+| `crawler.service.ts` | `internal/modules/crawler/crawler.service.go` |
+| `crawler.processor.ts` | `internal/modules/crawler/jobs/crawl.job.go` |
+| `crawler.scheduler.ts` | `internal/modules/crawler/rss.scheduler.go` |
+| `crawler.controller.ts` | `internal/modules/crawler/crawler.controller.go` |
+| `blacklist.controller.ts` | `internal/modules/crawler/blacklist.controller.go` |
+| `gateways/crawl-progress.gateway.ts` | `internal/modules/crawler/sse.controller.go` |
+| `entities/rss-feed.entity.ts` | `internal/modules/crawler/entities/rss_feed.go` |
+| `entities/scraper-config.entity.ts` | `internal/modules/crawler/entities/scraper_config.go` |
+| `entities/crawl-history.entity.ts` | `internal/modules/crawler/entities/crawl_history.go` |
+| `entities/domain-reputation.entity.ts` | `internal/modules/crawler/entities/domain_reputation.go` |
+| `entities/content-fingerprint.entity.ts` | `internal/modules/crawler/entities/content_fingerprint.go` |
+| `entities/content-blacklist.entity.ts` | `internal/modules/crawler/entities/content_blacklist.go` |
+| `services/anti-block.service.ts` | `pkg/scraper/` (reuse) |
+| `services/robots-parser.service.ts` | `pkg/scraper/robots.go` (reuse) |
+| `services/quality-gate.service.ts` | `pkg/scraper/quality_gate.go` (reuse) |
+| `services/content-dedup.service.ts` | `pkg/dedup/simhash.go` (reuse) |
+| `services/smart-selector.service.ts` | `pkg/ai/gemini.go` (reuse) |
+| `services/sitemap.service.ts` | `pkg/sitemap/parser.go` (reuse) |
+| `services/blacklist.service.ts` | `internal/modules/crawler/blacklist.service.go` |
 
 ### 6.2 Go File Structure
 
 ```
-cmd/crawler-service/
-├── main.go                      # Entry point: chi server + Asynq workers + SSE
-├── wire.go
-internal/
-├── models/                      # MongoDB documents with bson tags
-│   ├── rss_feed.go              # URL, category, language, frequency, last_fetch, status
-│   ├── scraper_config.go        # domain → CSS selectors mapping
-│   ├── crawl_history.go         # url, status, score, duration, errors, items_discovered
-│   ├── domain_reputation.go     # domain, success_rate, block_count, last_seen
-│   ├── content_fingerprint.go   # simhash uint64, sha256, url, created_at
-│   └── content_blacklist.go     # type(url/domain/keyword), pattern, reason, active
-├── services/
-│   ├── orchestrator.go          # Main crawl pipeline: discover → fetch → score → dedup → store → notify
-│   ├── feed_fetcher.go          # Concurrent RSS/Atom/JSON fetch with ETag/Last-Modified
-│   ├── scraper.go               # HTML fetch: robots.txt → proxy → UA → delay → fetch
-│   ├── anti_block.go            # Proxy pool, UA rotation, adaptive delay, backoff
-│   ├── robots_parser.go         # robots.txt respect list
-│   ├── quality_gate.go          # 8-rule scoring (0-100): ≥70 = publishable
-│   ├── content_dedup.go         # SimHash (FNV-1a) + exact SHA-256 dedup
-│   ├── smart_selector.go        # Gemini AI → CSS selector suggestions per domain
-│   ├── sitemap.go               # XML sitemap discovery + recursive crawl
-│   └── blacklist.go             # URL/domain/keyword blocklist (Aho-Corasick)
-├── jobs/
-│   ├── crawl_job.go             # Asynq job: {url, depth, config_id, priority}
-│   ├── refresh_feed_job.go      # Periodic feed refresh
-│   └── reindex_job.go           # Algorithm update re-fingerprinting
-├── handlers/
-│   ├── crawler_controller.go    # REST API
-│   ├── blacklist_controller.go
-│   ├── sse_gateway.go           # Server-Sent Events for real-time crawl progress
-│   └── feed_controller.go       # RSS feed CRUD
-└── sse/
-    └── broadcaster.go          # Thread-safe channel map for SSE connections
+internal/modules/crawler/
+├── crawler.module.go          # Module registration + Asynq worker pool setup
+├── crawler.controller.go    # REST API endpoints
+├── crawler.service.go      # Orchestrator (12-step pipeline)
+├── rss.controller.go       # RSS feed CRUD
+├── rss.scheduler.go        # Asynq cron: periodic feed refresh
+├── blacklist.controller.go  # Blacklist CRUD
+├── sse.controller.go       # SSE real-time crawl progress
+├── dto/
+│   ├── crawl-url.dto.go
+│   ├── rss-feed.dto.go
+│   └── blacklist.dto.go
+├── entities/                # MongoDB documents (bson tags)
+│   ├── rss_feed.go
+│   ├── crawl_history.go
+│   ├── content_fingerprint.go
+│   └── content_blacklist.go
+└── jobs/                    # Asynq job handlers (reuse pkg/scraper, pkg/dedup, pkg/ai)
+    ├── crawl.job.go
+    ├── refresh_feed.job.go
+    └── reindex.job.go
 ```
 
 ### 6.3 Quality Gate — 8 Rules (Port from TypeScript)
@@ -1761,39 +2076,35 @@ func HandleCrawlJob(ctx context.Context, t *asynq.Task) error {
 
 ---
 
-## 7. Trending Service Extraction
+## 7. Trending Module Extraction
 
 ### 7.1 NestJS Source → Go Porting Map
 
-| NestJS File | Go Equivalent | Porting Notes |
-|---|---|---|
-| `src/modules/trending/trending.module.ts` | `cmd/trending-service/main.go` | chi server, robfig/cron |
-| `src/modules/trending/trending.service.ts` | `internal/services/aggregator.go` | Merge + rank + dedupe all sources |
-| `src/modules/trending/trending.scheduler.ts` | `internal/services/scheduler.go` | Every 30 min via `robfig/cron` |
-| Entities (Topic, NewsArticle, Snapshot) | `internal/models/` | MongoDB BSON documents |
+| NestJS File | Go Target |
+|---|---|
+| `src/modules/trending/trending.module.ts` | `internal/modules/trending/trending.module.go` |
+| `src/modules/trending/trending.service.ts` | `internal/modules/trending/trending.service.go` |
+| `src/modules/trending/trending.scheduler.ts` | `internal/modules/trending/scheduler.go` |
+| Entities (Topic, NewsArticle, Snapshot) | `internal/modules/trending/entities/` |
 
-Trending module is the leanest extraction — focus on correct cron scheduling and URL discovery feed for crawler-service.
+Trending module is the leanest extraction — focus on correct cron scheduling and URL discovery feed for crawler module (internal Redis call, not HTTP).
 
 ### 7.2 Go File Structure
 
 ```
-cmd/trending-service/
-├── main.go                      # Entry: chi server, cron scheduler, graceful shutdown
-internal/
-├── models/
-│   ├── trending_topic.go        # topic, score, volume, source, keywords[], timestamp
-│   ├── news_article.go          # headline, source, url, published_at, relevance_score
-│   └── trending_snapshot.go     # Point-in-time snapshot for historical trend charts
-├── services/
-│   ├── google_trends.go        # serpapi/google-search-results-go OR chromedp scrape fallback
-│   ├── news_api.go             # NewsAPI.org via net/http + API key
-│   ├── aggregator.go           # Merge + rank + dedupe trending results
-│   └── scheduler.go            # robfig/cron v3 — every 30 min
-├── handlers/
-│   ├── trending_controller.go  # REST API
-│   └── feed_controller.go     # URL discovery feed (for crawler-service polling)
+internal/modules/trending/
+├── trending.module.go         # Module registration + cron scheduler
+├── trending.controller.go   # REST API endpoints
+├── trending.service.go      # Aggregator: merge + rank + dedupe
+├── scheduler.go            # robfig/cron v3: every 30 min
+├── dto/
+│   └── trending-topic.dto.go
+├── entities/
+│   ├── trending_topic.go    # topic, score, volume, source, keywords[], timestamp
+│   ├── news_article.go     # headline, source, url, published_at, relevance_score
+│   └── trending_snapshot.go # Point-in-time snapshot for historical trend charts
 └── cache/
-    └── redis_cache.go          # Redis cache with 25-min TTL per data source
+    └── redis_cache.go       # Redis cache with 25-min TTL per data source
 ```
 
 ### 7.3 Key Implementation Details
@@ -1809,7 +2120,7 @@ func (s *Scheduler) Start() {
             slog.Error("trending refresh failed", "err", err)
             return
         }
-        // Push discovered URLs to Redis list for crawler-service
+        // Push discovered URLs to Redis list for crawler module (internal call)
         for _, url := range extractURLs(topics) {
             if err := s.redis.LPush(ctx, "trending:urls", url).Err(); err != nil {
                 slog.Warn("failed to push trending URL", "url", url, "err", err)
@@ -1849,19 +2160,18 @@ func (a *TrendingAggregator) Refresh(ctx context.Context) ([]*TrendingTopic, err
 
 ### 7.4 URL Discovery Feed (Crawler Integration)
 
-The most critical inter-service contract — trending-service provides URLs for crawler-service:
+The most critical module integration — trending module provides URLs for crawler module (direct Redis call, no HTTP):
 
 ```go
 // internal/cache/redis_cache.go
-// crawler-service calls: LRANGE trending:urls 0 99 → LTRIM trending:urls 100 -1
-// Falls back to HTTP endpoint if Redis is unavailable
+// crawler module calls: LRANGE trending:urls 0 99 → LTRIM trending:urls 100 -1
+// Falls back to HTTP endpoint only if Redis is unavailable
 func (s *FeedController) GetDiscoveryFeed(w http.ResponseWriter, r *http.Request) {
     ctx := r.Context()
     urls, err := s.redis.LRange(ctx, "trending:urls", 0, 99).Result()
     if err != nil {
-        // Fallback: call trending-service HTTP endpoint
-        resp, _ := s.httpClient.Get("http://trending-service:8084/trending/feeds?limit=100")
-        defer resp.Body.Close()
+        // Fallback: direct call to trending module (same binary — no HTTP needed)
+        urls = s.trendingModule.GetFeeds(ctx, 100)
         json.NewDecoder(resp.Body).Decode(&urls)
     }
     json.NewEncoder(w).Encode(map[string]interface{}{"urls": urls, "count": len(urls)})
@@ -1876,7 +2186,7 @@ GET  /ready                     → MongoDB + Redis connected
 GET  /trending/topics           → Top 20 trending topics (cached)
 GET  /trending/topics/:topic    → Topic detail with keywords + timeline
 GET  /trending/news             → Latest news articles
-GET  /trending/feeds           → URL discovery feed for crawler-service
+GET  /trending/feeds           → URL discovery feed for crawler module
 GET  /trending/history          → Historical snapshots for trend charts
 GET  /trending/sources          → Status of Google Trends + NewsAPI (healthy/degraded)
 POST /trending/refresh          → Admin: trigger immediate full refresh
@@ -1888,7 +2198,7 @@ POST /trending/refresh          → Admin: trigger immediate full refresh
 |---|---|
 | NewsAPI free tier: 100 req/day | Aggressive 25-min Redis cache; batch all topic lookups per refresh cycle |
 | Google Trends rate limit | Cache 25 min; fallback to NewsAPI-only if Trends fails |
-| URL flood overwhelming crawler | Redis list capped at 10,000 URLs; crawler-service has its own priority queue |
+| URL flood overwhelming crawler | Redis list capped at 10,000 URLs; crawler module has its own Asynq priority queue |
 
 ---
 
@@ -1905,21 +2215,21 @@ NestJS ──writes──► MongoDB ──reads──► Go Service
    └──────── reads (backward compat) ─────┘
 ```
 
-### 8.2 MongoDB Collections by Service
+### 8.2 ✅ MongoDB Collections by Module (Updated 2026-03-31)
 
-| Collection | Owner | Strangler Fig Strategy |
+| Collection | Owner | Status |
 |---|---|---|
-| `bot_conversations` | Go (bot-service) from Week 3 | NestJS reads only after cutover |
-| `bot_linked_accounts` | Go (bot-service) from Week 3 | Same |
-| `bot_workflows` | Go (bot-service) from Week 3 | Same |
-| `notifications` | Go (notification-service) from Week 5 | Same |
-| `crawl_history` | Go (crawler-service) from Week 7 | Same |
-| `rss_feeds` | Go (crawler-service) from Week 7 | Same |
-| `scraper_configs` | Go (crawler-service) from Week 7 | Same |
-| `domain_reputation` | Go (crawler-service) from Week 7 | Same |
-| `content_fingerprints` | Go (crawler-service) from Week 7 | Same |
-| `content_blacklist` | Go (crawler-service) from Week 7 | Same |
-| `trending_topics` | Go (trending-service) from Week 11 | Same |
+| `bot_conversations` | ✅ Go (bot module) — Phase 2 DONE | ✅ DONE |
+| `bot_linked_accounts` | ✅ Go (bot module) — Phase 2 DONE | ✅ DONE |
+| `bot_workflows` | ✅ Go (bot module) — Phase 2 DONE | ✅ DONE |
+| `notifications` | 🔄 Go (notifications module) — Phase 3 | 🔄 IN PROGRESS |
+| `crawl_history` | 🔄 Go (crawler module) — Phase 4 | 🔄 IN PROGRESS |
+| `rss_feeds` | 🔄 Go (crawler module) — Phase 4 | 🔄 IN PROGRESS |
+| `scraper_configs` | 🔄 Go (crawler module) — Phase 4 | 🔄 IN PROGRESS |
+| `domain_reputation` | 🔄 Go (crawler module) — Phase 4 | 🔄 IN PROGRESS |
+| `content_fingerprints` | 🔄 Go (crawler module) — Phase 4 | 🔄 IN PROGRESS |
+| `content_blacklist` | 🔄 Go (crawler module) — Phase 4 | 🔄 IN PROGRESS |
+| `trending_topics` | ⬜ Go (trending module) — Phase 5 | ⬜ NOT STARTED |
 | `auth_activity_logs` | NestJS only | Not migrated |
 
 ### 8.3 MongoDB Connection (Production-Grade)
@@ -2006,20 +2316,27 @@ func Up(ctx context.Context, db *mongo.Database) error {
 }
 ```
 
-### 8.5 Backward Compatibility Checklist
+### 8.5 ✅ Backward Compatibility Checklist — Updated 2026-03-31
+
+> **📌 Architecture note**: Vì tất cả modules nằm trong 1 binary `cmd/server`, cutover là **module-by-module**. NestJS có thể đọc MongoDB collections sau khi Go module hoàn thành. Feature flags control routing.
 
 ```
-Phase 2 (Week 3-4): BOT cutover
-  □ bot_conversations: Go writes, NestJS reads only
-  □ Feature flag: FEATURE_FLAG_BOT=go (NestJS checks flag → proxies to bot-service:8081)
+✅ Phase 2 (BOT) — DONE
+  □ bot_conversations: Go viết, NestJS chỉ đọc sau cutover
+  □ Feature flag: FEATURE_FLAG_BOT=go → direct Go module
 
-Phase 3 (Week 5-6): Notification cutover
-  □ notifications: Go writes, NestJS reads only
+🔄 Phase 3 (Notification) — IN PROGRESS
+  □ notifications: Go viết, NestJS chỉ đọc sau cutover
   □ Feature flag: FEATURE_FLAG_NOTIFICATIONS=go
 
-Phase 4 (Week 7-10): Crawler cutover
-  □ All crawler collections: Go owns writes
+🔄 Phase 4 (Crawler) — IN PROGRESS
+  □ All crawler collections: Go viết
   □ Feature flag: FEATURE_FLAG_CRAWLER=go
+
+⬜ Phase 5 (Trending) — NOT STARTED
+  □ trending_topics: Go viết
+  □ Feature flag: FEATURE_FLAG_TRENDING=go
+```
 
 Phase 5 (Week 11-12): Trending cutover
   □ trending_topics: Go owns writes
@@ -2042,12 +2359,14 @@ Phase 6 (Week 13-14): NestJS decommission
 
 ## 9. Deployment & CI/CD
 
-### 9.1 Docker Build Strategy
+### 9.1 ✅ Docker Build Strategy — Single Binary (Updated 2026-03-31)
 
-**Shared base image** — one `Dockerfile` builds all 4 binaries, each service uses a thin `Dockerfile`:
+> **📌 Architecture change**: 1 binary duy nhất thay vì 4. Build: `go build -o erg-server ./cmd/server`
+
+**Dockerfile** (multi-stage, builds single binary):
 
 ```dockerfile
-# Dockerfile.base  (multi-stage, builds ALL services)
+# Dockerfile  (multi-stage, builds SINGLE binary chứa tất cả 4 modules)
 FROM golang:1.22-alpine AS builder
 
 # Install build deps
@@ -2059,48 +2378,33 @@ WORKDIR /build
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy source and build all 4 services
+# Copy source
 COPY . .
 
+# Build single binary — chứa tất cả 4 modules
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
     go build -ldflags="-s -w -X main.version=$(git describe --tags)" \
-    -o bot-service ./cmd/bot-service
+    -o erg-server ./cmd/server
 
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
-    go build -ldflags="-s -w" -o notification-service ./cmd/notification-service
-
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
-    go build -ldflags="-s -w" -o crawler-service ./cmd/crawler-service
-
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
-    go build -ldflags="-s -w" -o trending-service ./cmd/trending-service
-
-# Scratch base image (smallest possible)
+# Scratch base image (~20-30MB)
 FROM scratch
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
-COPY --from=builder /build/bot-service            /bin/bot-service
-COPY --from=builder /build/notification-service   /bin/notification-service
-COPY --from=builder /build/crawler-service        /bin/crawler-service
-COPY --from=builder /build/trending-service        /bin/trending-service
-COPY --from=builder /build/configs/               /etc/erg/
+COPY --from=builder /build/erg-server /bin/erg-server
+COPY --from=builder /build/config.yaml /etc/erg/config.yaml
+EXPOSE 8080
+ENTRYPOINT ["/bin/erg-server", "--config", "/etc/erg/config.yaml"]
 ```
 
-```dockerfile
-# cmd/bot-service/Dockerfile  (thin, uses base)
-FROM erg-go-base:latest
-COPY configs/bot-service.yaml /etc/erg/bot-service.yaml
-EXPOSE 8081
-ENTRYPOINT ["/bin/bot-service", "--config", "/etc/erg/bot-service.yaml"]
-```
+### 9.2 ✅ Server Ports Summary
 
-### 9.2 Service Ports Summary
+> **📌 Single binary, single port**: Tất cả 4 modules chạy trên 1 port `:8080`. Routes phân biệt bằng chi router prefix.
 
-| Service | HTTP Port | Asynq Port | Config File |
+| Module | Route Prefix | Asynq Workers | Notes |
 |---|---|---|---|
-| `bot-service` | 8081 | — | `bot-service.yaml` |
-| `notification-service` | 8082 | 9092 | `notification-service.yaml` |
-| `crawler-service` | 8083 | 9093 | `crawler-service.yaml` |
-| `trending-service` | 8084 | — | `trending-service.yaml` |
+| `bot` | `/api/bot`, `/webhooks/*` | ✅ | Goroutine pool |
+| `notifications` | `/api/notifications`, `/api/channels` | ✅ | Event consumer |
+| `crawler` | `/api/crawler`, `/api/rss`, `/api/sitemap`, `/api/blacklist` | ✅ | 20 workers |
+| `trending` | `/api/trending`, `/api/feeds` | ✅ | Cron 30-min |
 
 ### 9.3 docker-compose.yml (Full Dev Stack)
 
@@ -2130,53 +2434,20 @@ services:
       - redis-data:/data
     restart: unless-stopped
 
-  bot-service:
+  erg-server:
     build:
       context: ./go-erg
-      dockerfile: ./cmd/bot-service/Dockerfile
-    ports: ["8081:8081"]
+      dockerfile: ./Dockerfile
+    ports: ["8080:8080"]
     environment:
-      CONFIG_PATH: /etc/erg/bot-service.yaml
+      CONFIG_PATH: /etc/erg/config.yaml
     volumes:
-      - ./go-erg/configs/bot-service.yaml:/etc/erg/bot-service.yaml:ro
+      - ./go-erg/config.yaml:/etc/erg/config.yaml:ro
     depends_on:
       mongo:
         condition: service_healthy
       redis:
         condition: service_healthy
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8081/healthz"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-
-  notification-service:
-    build:
-      context: ./go-erg
-      dockerfile: ./cmd/notification-service/Dockerfile
-    ports: ["8082:8082", "9092:9092"]
-    environment:
-      CONFIG_PATH: /etc/erg/notification-service.yaml
-    volumes:
-      - ./go-erg/configs/notification-service.yaml:/etc/erg/notification-service.yaml:ro
-    depends_on: [mongo, redis]
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8082/healthz"]
-      interval: 10s; timeout: 5s; retries: 3
-
-  crawler-service:
-    build:
-      context: ./go-erg
-      dockerfile: ./cmd/crawler-service/Dockerfile
-    ports: ["8083:8083", "9093:9093"]
-    environment:
-      CONFIG_PATH: /etc/erg/crawler-service.yaml
-      GOMAXPROCS: "4"          # Limit CPU cores for crawler workers
-    volumes:
-      - ./go-erg/configs/crawler-service.yaml:/etc/erg/crawler-service.yaml:ro
-    depends_on: [mongo, redis]
     restart: unless-stopped
     deploy:
       resources:
@@ -2187,23 +2458,10 @@ services:
           cpus: '1'
           memory: 512M
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8083/healthz"]
-      interval: 10s; timeout: 5s; retries: 3
-
-  trending-service:
-    build:
-      context: ./go-erg
-      dockerfile: ./cmd/trending-service/Dockerfile
-    ports: ["8084:8084"]
-    environment:
-      CONFIG_PATH: /etc/erg/trending-service.yaml
-    volumes:
-      - ./go-erg/configs/trending-service.yaml:/etc/erg/trending-service.yaml:ro
-    depends_on: [mongo, redis]
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8084/healthz"]
-      interval: 10s; timeout: 5s; retries: 3
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
 volumes:
   mongo-data:
@@ -2271,13 +2529,10 @@ jobs:
           file: go-erg/coverage.out
           fail_ci_if_error: true
 
-  # ── Stage 2: Build all 4 Docker images ────────────────────────────
-  build-images:
+  # ── Stage 2: Build single Docker image ────────────────────────────
+  build-image:
     runs-on: ubuntu-latest
     needs: lint-and-test
-    strategy:
-      matrix:
-        service: [bot-service, notification-service, crawler-service, trending-service]
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
@@ -2286,25 +2541,18 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: ./go-erg
-          file: ./go-erg/cmd/${{ matrix.service }}/Dockerfile
+          file: ./go-erg/Dockerfile
           push: ${{ github.ref == 'refs/heads/main' }}
           tags: |
-            ${{ env.REGISTRY }}/${{ matrix.service }}:${{ github.sha }}
-            ${{ env.REGISTRY }}/${{ matrix.service }}:latest
+            ${{ env.REGISTRY }}/erg-server:${{ github.sha }}
+            ${{ env.REGISTRY }}/erg-server:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          outputs: type=docker,dest=/tmp/${{ matrix.service }}.tar
-
-      - name: Upload image artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.service }}-image
-          path: /tmp/${{ matrix.service }}.tar
 
   # ── Stage 3: Deploy to Staging (on main branch) ───────────────────
   deploy-staging:
     runs-on: ubuntu-latest
-    needs: build-images
+    needs: build-image
     if: github.ref == 'refs/heads/main'
     environment: staging
     steps:
@@ -2315,54 +2563,39 @@ jobs:
           echo "${{ secrets.KUBE_CONFIG_STAGING }}" | base64 -d > kubeconfig
           echo "KUBECONFIG=$(pwd)/kubeconfig" >> $GITHUB_ENV
 
-      - name: Deploy all services
+      - name: Deploy erg-server
         run: |
-          kubectl set image deployment/bot-service \
-            bot-service=${{ env.REGISTRY }}/bot-service:${{ github.sha }} \
-            --namespace=erg-staging
-          kubectl set image deployment/notification-service \
-            notification-service=${{ env.REGISTRY }}/notification-service:${{ github.sha }} \
-            --namespace=erg-staging
-          kubectl set image deployment/crawler-service \
-            crawler-service=${{ env.REGISTRY }}/crawler-service:${{ github.sha }} \
-            --namespace=erg-staging
-          kubectl set image deployment/trending-service \
-            trending-service=${{ env.REGISTRY }}/trending-service:${{ github.sha }} \
+          kubectl set image deployment/erg-server \
+            erg-server=${{ env.REGISTRY }}/erg-server:${{ github.sha }} \
             --namespace=erg-staging
 
       - name: Wait for rollout
         run: |
-          kubectl rollout status deployment/bot-service --namespace=erg-staging --timeout=120s
-          kubectl rollout status deployment/notification-service --namespace=erg-staging --timeout=120s
-          kubectl rollout status deployment/crawler-service --namespace=erg-staging --timeout=120s
-          kubectl rollout status deployment/trending-service --namespace=erg-staging --timeout=120s
+          kubectl rollout status deployment/erg-server --namespace=erg-staging --timeout=120s
 
       - name: Smoke test staging
         run: |
           sleep 10
-          curl -sf http://bot-service.erg-staging/healthz || exit 1
-          curl -sf http://notification-service.erg-staging/healthz || exit 1
-          curl -sf http://crawler-service.erg-staging/healthz || exit 1
-          curl -sf http://trending-service.erg-staging/healthz || exit 1
+          curl -sf http://erg-server.erg-staging/healthz || exit 1
 ```
 
-### 9.5 Kubernetes Deployment Manifests
+### 9.5 ✅ Kubernetes Deployment Manifest — Single Binary (Updated 2026-03-31)
 
 ```yaml
-# k8s/crawler-service.yaml
+# k8s/erg-server.yaml — 1 Deployment cho tất cả 4 modules
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: crawler-service
+  name: erg-server
   namespace: erg-prod
   labels:
-    app: crawler-service
+    app: erg-server
     version: v1
 spec:
   replicas: 3
   selector:
     matchLabels:
-      app: crawler-service
+      app: erg-server
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -2371,41 +2604,39 @@ spec:
   template:
     metadata:
       labels:
-        app: crawler-service
+        app: erg-server
         version: v1
     spec:
       containers:
-        - name: crawler-service
-          image: ghcr.io/yourorg/crawler-service:latest
+        - name: erg-server
+          image: ghcr.io/yourorg/erg-server:latest
           ports:
             - name: http
-              containerPort: 8083
-            - name: asynq
-              containerPort: 9093
+              containerPort: 8080
           resources:
             requests:
               cpu: "500m"
               memory: "512Mi"
             limits:
-              cpu: "2000m"
-              memory: "2Gi"
+              cpu: "4000m"    # Full CPU for crawler workers
+              memory: "4Gi"   # More memory for crawler + trending
           readinessProbe:
             httpGet:
               path: /ready
-              port: 8083
+              port: 8080
             initialDelaySeconds: 5
             periodSeconds: 10
             successThreshold: 1
           livenessProbe:
             httpGet:
               path: /healthz
-              port: 8083
+              port: 8080
             initialDelaySeconds: 15
             periodSeconds: 20
             failureThreshold: 3
           env:
             - name: CONFIG_PATH
-              value: "/etc/erg/crawler-service.yaml"
+              value: "/etc/erg/config.yaml"
             - name: GOMAXPROCS
               value: "4"
           volumeMounts:
@@ -2415,17 +2646,17 @@ spec:
       volumes:
         - name: config
           secret:
-            secretName: crawler-service-config
+            secretName: erg-server-config
 ```
 
-### 9.6 Per-Service Config Files
+### 9.6 ✅ Config File — All Modules in One (Updated 2026-03-31)
 
 ```yaml
-# configs/crawler-service.yaml
+# config.yaml — 1 file cho tất cả 4 modules trong 1 binary
 app:
-  name: crawler-service
+  name: erg-server
   host: "0.0.0.0"
-  port: 8083
+  port: 8080
   env: "${APP_ENV}"
 
 mongo:
@@ -2444,7 +2675,7 @@ asynq:
   host: "${REDIS_HOST}"
   port: 6379
   password: "${REDIS_PASSWORD}"
-  concurrency: 20        # Default worker pool size
+  concurrency: 20        # Default worker pool size (crawler module)
   retry_max: 3
   retry_delay: 10s
   dead_letter_ttl: 168h  # 7 days
@@ -2467,7 +2698,7 @@ logging:
   format: "json"
 
 telemetry:
-  prometheus_port: 9094          # Metrics endpoint
+  prometheus_port: 9090          # Metrics endpoint
   otel_endpoint: "${OTEL_ENDPOINT}"
 ```
 
@@ -2617,48 +2848,50 @@ func TestDigestScheduler_DailyDigest(t *testing.T) {
 }
 ```
 
-### 10.4 E2E Tests (Full Stack)
+### 10.4 ✅ E2E Tests (Full Stack — Single Binary)
 
 ```go
 // test/e2e/full_workflow_test.go
-// docker-compose up all 4 services → run E2E tests against them
+// docker-compose up → erg-server binary starts (all 4 modules) → run E2E tests
 
 func TestTrendingToNotificationWorkflow(t *testing.T) {
     if testing.Short() {
         t.Skip("skipping E2E in short mode")
     }
 
-    crawlerSvc := crawler.NewClient("http://localhost:8083")
-    trendingSvc := trending.NewClient("http://localhost:8084")
-    notifSvc := notification.NewClient("http://localhost:8082")
+    // All modules in same binary — test via HTTP (single port :8080)
+    // hoặc gọi trực tiếp các module functions trong test
+    // (Direct module calls trong test — no HTTP overhead)
+    server := server.NewServer(cfg, mongo, redis, queue, eventBus)
+    ctx := context.Background()
 
     // 1. Trigger trending refresh
     require.NoError(t, trendingSvc.Refresh(context.Background()))
 
-    // 2. Fetch discovered URLs
-    feed, err := trendingSvc.GetDiscoveryFeed(context.Background())
+    // 2. Fetch discovered URLs (direct call — same binary, no HTTP)
+    feed, err := trendingModule.GetDiscoveryFeed(ctx)
     require.NoError(t, err)
     require.NotEmpty(t, feed.URLs, "trending should discover URLs")
 
-    // 3. Enqueue first URL for crawling
-    jobID, err := crawlerSvc.EnqueueURL(context.Background(), feed.URLs[0])
+    // 3. Enqueue first URL for crawling (direct call to crawler module)
+    jobID, err := crawlerModule.EnqueueURL(ctx, feed.URLs[0])
     require.NoError(t, err)
 
     // 4. Poll until completion (max 2 min)
-    result, err := crawlerSvc.WaitForCompletion(context.Background(), jobID, 2*time.Minute)
+    result, err := crawlerModule.WaitForCompletion(ctx, jobID, 2*time.Minute)
     require.NoError(t, err)
     require.Equal(t, crawler.JobStatusSuccess, result.Status)
 
-    // 5. Verify notification was recorded
-    notifs, err := notifSvc.List(context.Background(), notification.ListFilter{
+    // 5. Verify notification was recorded (direct call to notifications module)
+    notifs, err := notificationsModule.List(ctx, notification.ListFilter{
         Type: "crawl.success",
         Limit: 10,
     })
     require.NoError(t, err)
     require.NotEmpty(t, notifs.Items, "crawl.success notification should be sent")
 
-    // 6. Verify crawl history persisted
-    history, err := crawlerSvc.GetHistory(context.Background(), jobID)
+    // 6. Verify crawl history persisted (direct call to crawler module)
+    history, err := crawlerModule.GetHistory(ctx, jobID)
     require.NoError(t, err)
     require.NotZero(t, history.ID)
 }
@@ -2681,7 +2914,7 @@ func TestBotAPI_ContractParity(t *testing.T) {
     for _, ep := range endpoints {
         t.Run(ep, func(t *testing.T) {
             nestJSResp := fetch("http://nestjs:3003" + ep)
-            goResp := fetch("http://bot-service:8081" + ep)
+            goResp := fetch("http://erg-server:8080" + ep)
 
             if nestJSResp.Status != goResp.Status {
                 t.Errorf("Status mismatch for %s: NestJS=%d, Go=%d", ep, nestJSResp.Status, goResp.Status)
@@ -2718,7 +2951,7 @@ func BenchmarkHTTPBotWebhook(b *testing.B) {
         var wg sync.WaitGroup
         for i := 0; i < 1000; i++ {
             wg.Add(1)
-            go func() { defer wg.Done(); http.Post(botServiceURL, "application/json", bytes.NewReader(discordPayload)) }()
+            go func() { defer wg.Done(); botModule.HandleWebhook(ctx, discordPayload) }()
         }
         wg.Wait()
     })

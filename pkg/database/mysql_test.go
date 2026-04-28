@@ -2,11 +2,38 @@ package database
 
 import (
 	"testing"
+	"time"
 
 	"erg.ninja/pkg/config"
 )
 
-func TestBuildPgConnStr(t *testing.T) {
+func TestBuildMySQLDSN(t *testing.T) {
+	cfg := MySQLConfig{
+		Host:     "localhost",
+		Port:     3306,
+		User:     "root",
+		Password: "secret",
+		Database: "erg",
+	}
+	s := buildMySQLDSN(cfg)
+	if s == "" {
+		t.Error("buildMySQLDSN returned empty string")
+	}
+	if !containsStr(s, "localhost") {
+		t.Error("DSN missing host")
+	}
+	if !containsStr(s, "3306") {
+		t.Error("DSN missing port")
+	}
+	if !containsStr(s, "erg") {
+		t.Error("DSN missing database name")
+	}
+	if !containsStr(s, "utf8mb4") {
+		t.Error("DSN missing charset")
+	}
+}
+
+func TestBuildPostgresDSN(t *testing.T) {
 	cfg := config.DatabaseConfig{
 		Host:     "localhost",
 		Port:     5432,
@@ -14,32 +41,19 @@ func TestBuildPgConnStr(t *testing.T) {
 		Password: "secret",
 		Name:     "erg",
 	}
-	s := buildPgConnStr(cfg)
+	s := buildPostgresDSN(cfg)
 	if s == "" {
-		t.Error("buildPgConnStr returned empty string")
+		t.Error("buildPostgresDSN returned empty string")
 	}
-	if !contains(s, "localhost") {
-		t.Error("connection string missing host")
+	if !containsStr(s, "localhost") {
+		t.Error("DSN missing host")
 	}
-	if !contains(s, "5432") {
-		t.Error("connection string missing port")
+	if !containsStr(s, "5432") {
+		t.Error("DSN missing port")
 	}
-	if !contains(s, "erg") {
-		t.Error("connection string missing database name")
+	if !containsStr(s, "erg") {
+		t.Error("DSN missing database name")
 	}
-}
-
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsImpl(s, substr))
-}
-
-func containsImpl(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }
 
 func TestDatabaseConfigDefaults(t *testing.T) {
@@ -50,4 +64,40 @@ func TestDatabaseConfigDefaults(t *testing.T) {
 	if cfg.MaxOpenConns == 0 {
 		t.Error("MaxOpenConns should not be zero")
 	}
+}
+
+func TestMySQLConfigDefaults(t *testing.T) {
+	cfg := MySQLConfig{}
+	if cfg.Port == 0 {
+		cfg.Port = 3306
+	}
+	if cfg.MaxOpenConns == 0 {
+		cfg.MaxOpenConns = 25
+	}
+	if cfg.MaxIdleConns == 0 {
+		cfg.MaxIdleConns = 10
+	}
+	if cfg.ConnMaxLifetime == 0 {
+		cfg.ConnMaxLifetime = 5 * time.Minute
+	}
+
+	if cfg.Port != 3306 {
+		t.Errorf("expected port 3306, got %d", cfg.Port)
+	}
+	if cfg.MaxOpenConns != 25 {
+		t.Errorf("expected MaxOpenConns 25, got %d", cfg.MaxOpenConns)
+	}
+}
+
+func containsStr(s, substr string) bool {
+	return len(s) >= len(substr) && containsStrImpl(s, substr)
+}
+
+func containsStrImpl(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
 }

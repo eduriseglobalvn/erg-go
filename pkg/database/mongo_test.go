@@ -11,12 +11,10 @@ import (
 )
 
 func TestBuildURI(t *testing.T) {
+	// buildURI requires a non-empty URI field.
+	// Direct Host/Port construction is done via config.yaml, not code.
 	cfg := config.MongoDBConfig{
-		Host:       "localhost",
-		Port:       27017,
-		User:       "admin",
-		Password:   "secret",
-		AuthSource: "admin",
+		URI: "mongodb+srv://admin:secret@localhost/?authSource=admin",
 	}
 	uri, err := buildURI(cfg)
 	if err != nil {
@@ -43,6 +41,14 @@ func TestBuildURIWithExplicitURI(t *testing.T) {
 	}
 }
 
+func TestBuildURIRequiresURI(t *testing.T) {
+	cfg := config.MongoDBConfig{}
+	_, err := buildURI(cfg)
+	if err == nil {
+		t.Error("buildURI with empty config should return error")
+	}
+}
+
 func TestParseReadPreference(t *testing.T) {
 	cases := []struct {
 		input string
@@ -64,8 +70,8 @@ func TestParseReadPreference(t *testing.T) {
 	}
 	// Verify default is secondaryPreferred.
 	mode, _ := parseReadPreference("")
-	if *mode != readpref.SecondaryPreferred() {
-		t.Errorf("default read preference should be SecondaryPreferred")
+	if mode.Mode() != readpref.SecondaryPreferred().Mode() {
+		t.Errorf("default read preference should be SecondaryPreferred, got %v", mode.Mode())
 	}
 }
 

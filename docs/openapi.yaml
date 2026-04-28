@@ -1,0 +1,452 @@
+openapi: 3.0.3
+info:
+  title: ERG Bot Service API
+  version: "1.0"
+  description: REST API for the ERG Bot Service — conversation management, account linking, platform webhooks, and workflow execution.
+
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+
+tags:
+  - name: Bot
+    description: Bot conversation, link, and account management
+  - name: Bot Webhooks
+    description: Inbound platform webhook handlers
+
+paths:
+  # ── Bot: Conversations ──────────────────────────────────────────────────────
+  /api/bot/conversations:
+    get:
+      summary: List active conversations
+      description: Returns paginated active conversations filtered by platform and user_id.
+      tags: [Bot]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: platform
+          schema:
+            type: string
+            enum: [discord, telegram]
+          description: Filter by platform
+        - in: query
+          name: user_id
+          schema:
+            type: string
+          description: Filter by user ID
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+          description: Max results
+        - in: query
+          name: skip
+          schema:
+            type: integer
+            default: 0
+          description: Skip N records
+      responses:
+        "200":
+          description: List of conversations
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  conversations:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/BotConversation"
+                  count:
+                    type: integer
+                  limit:
+                    type: integer
+                  skip:
+                    type: integer
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /api/bot/conversations/{id}:
+    get:
+      summary: Get a conversation by platform ID
+      description: Returns a single conversation by its platform conversation ID.
+      tags: [Bot]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+          description: Platform conversation ID
+      responses:
+        "200":
+          description: Conversation details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BotConversation"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /api/bot/conversations/{id}/send:
+    post:
+      summary: Send a message to a conversation
+      description: Sends a message to a conversation via the appropriate platform (Discord DM fallback).
+      tags: [Bot]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+          description: Platform conversation ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SendMessageRequest"
+      responses:
+        "200":
+          description: Message sent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: sent
+                  conv_id:
+                    type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /api/bot/conversations/{id}/wizard:
+    get:
+      summary: Get active wizard state for a conversation
+      description: Returns the active multi-step wizard (onboarding, setup, etc.) state for a conversation.
+      tags: [Bot]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+          description: Platform conversation ID
+      responses:
+        "200":
+          description: Wizard state (active=true or active=false)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  active:
+                    type: boolean
+                  step:
+                    type: string
+                    description: Current wizard step
+                  data:
+                    type: object
+                    description: Accumulated wizard data
+                  expires_at:
+                    type: string
+                    format: date-time
+                  started_at:
+                    type: string
+                    format: date-time
+
+  # ── Bot: Account Linking ────────────────────────────────────────────────────
+  /api/bot/link:
+    post:
+      summary: Create an account link code
+      description: Creates a 6-character link code for a user to associate their platform account.
+      tags: [Bot]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LinkCodeRequest"
+      responses:
+        "201":
+          description: Link code created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    description: 6-character code
+                  expires_in:
+                    type: string
+                    example: "5 minutes"
+                  user_id:
+                    type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /api/bot/link/{code}:
+    get:
+      summary: Get link code status
+      description: Returns the status of a link code (pending until verified via platform webhook).
+      tags: [Bot]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: code
+          required: true
+          schema:
+            type: string
+          description: 6-character link code
+      responses:
+        "200":
+          description: Link code status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                  status:
+                    type: string
+                    enum: [pending, verified, expired]
+
+  /api/bot/accounts:
+    get:
+      summary: List linked platform accounts
+      description: Lists all linked platform accounts (Discord, Telegram) for a user.
+      tags: [Bot]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: user_id
+          required: true
+          schema:
+            type: string
+          description: User ID
+      responses:
+        "200":
+          description: List of linked accounts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accounts:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/LinkedAccount"
+                  count:
+                    type: integer
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /api/bot/accounts/{id}:
+    delete:
+      summary: Unlink a platform account
+      description: Removes the link between a user and a platform account.
+      tags: [Bot]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+          description: Platform user ID
+        - in: query
+          name: platform
+          required: true
+          schema:
+            type: string
+            enum: [discord, telegram]
+          description: Platform name
+      responses:
+        "200":
+          description: Account unlinked
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: unlinked
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  # ── Bot: Webhooks (public, platform-verified) ────────────────────────────────
+  /webhooks/telegram:
+    post:
+      summary: Telegram webhook handler
+      description: Receives and processes Telegram updates (messages, callbacks). Signature verified via X-Telegram-Bot-Api-Secret-Token header and HMAC-SHA256.
+      tags: [Bot Webhooks]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Telegram Update payload
+      responses:
+        "200":
+          description: Webhook acknowledged
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /webhooks/discord:
+    post:
+      summary: Discord interaction webhook handler
+      description: Receives and processes Discord interaction webhooks (slash commands, button clicks). Signature verified via Ed25519 or HMAC-SHA256.
+      tags: [Bot Webhooks]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Discord Interaction payload
+      responses:
+        "200":
+          description: Interaction acknowledged
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    type: integer
+                    description: Discord interaction type (1=Ping, 5=DeferredChannelMessage)
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  # ── Bot: Health ─────────────────────────────────────────────────────────────
+  /healthz:
+    get:
+      summary: Liveness probe
+      description: Returns service status. Used by Kubernetes liveness probe.
+      tags: [Bot]
+      security: []
+      responses:
+        "200":
+          description: Service is alive
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  service:
+                    type: string
+                    example: bot-service
+
+  /ready:
+    get:
+      summary: Readiness probe
+      description: Returns service status with dependency checks (MongoDB, Redis). Used by Kubernetes readiness probe.
+      tags: [Bot]
+      security: []
+      responses:
+        "200":
+          description: Service is ready
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  service:
+                    type: string
+                  uptime:
+                    type: string
+                  dependencies:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                        status:
+                          type: string
+                          enum: [up, down]
+                        error:
+                          type: string
+                  runtime:
+                    type: object
+                    properties:
+                      go_version:
+                        type: string
+                      go_routines:
+                        type: string
+                      memory_mb:
+                        type: string
+                  conversations:
+                    type: object
+                    properties:
+                      active:
+                        type: integer
+        "503":
+          description: Service not ready (one or more dependencies down)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"

@@ -3,6 +3,8 @@ package scraper
 
 import (
 	"bytes"
+	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/url"
@@ -26,7 +28,7 @@ type ParseResult struct {
 	Links       []string
 	Images      []string
 	Headings    map[string][]string // h1, h2, h3 → text content
-	Metadata    map[string]string  // og:title, description, etc.
+	Metadata    map[string]string   // og:title, description, etc.
 	RawText     string
 	Error       error
 }
@@ -110,7 +112,7 @@ func (p *Parser) ParseHTML(html []byte, baseURL string) *ParseResult {
 }
 
 // ExtractBySelector extracts all text content matching a CSS selector.
-func (p *Parser) ExtractBySelector(html []byte, selector string) ([]string, error) {
+func (p *Parser) ExtractBySelector(ctx context.Context, html []byte, selector string) ([]string, error) {
 	doc, err := goquery.NewDocumentFromReader(bytes.NewReader(html))
 	if err != nil {
 		return nil, fmt.Errorf("scraper: parse HTML: %w", err)
@@ -118,13 +120,19 @@ func (p *Parser) ExtractBySelector(html []byte, selector string) ([]string, erro
 
 	var results []string
 	doc.Find(selector).Each(func(_ int, s *goquery.Selection) {
+		if ctx != nil && ctx.Err() != nil {
+			return
+		}
 		results = append(results, s.Text())
 	})
+	if err := contextErr(ctx); err != nil {
+		return nil, err
+	}
 	return results, nil
 }
 
 // ExtractLinks extracts all absolute URLs from anchor tags.
-func (p *Parser) ExtractLinks(html []byte, baseURL string) ([]string, error) {
+func (p *Parser) ExtractLinks(ctx context.Context, html []byte, baseURL string) ([]string, error) {
 	doc, err := goquery.NewDocumentFromReader(bytes.NewReader(html))
 	if err != nil {
 		return nil, fmt.Errorf("scraper: parse HTML: %w", err)
@@ -134,6 +142,9 @@ func (p *Parser) ExtractLinks(html []byte, baseURL string) ([]string, error) {
 	var links []string
 
 	doc.Find("a[href]").Each(func(_ int, s *goquery.Selection) {
+		if ctx != nil && ctx.Err() != nil {
+			return
+		}
 		href, _ := s.Attr("href")
 		if href == "" || strings.HasPrefix(href, "#") {
 			return
@@ -149,11 +160,15 @@ func (p *Parser) ExtractLinks(html []byte, baseURL string) ([]string, error) {
 		}
 	})
 
+	if err := contextErr(ctx); err != nil {
+		return nil, err
+	}
 	return links, nil
 }
 
 // ExtractJSONLD extracts JSON-LD structured data from a page.
-func (p *Parser) ExtractJSONLD(html []byte) ([]map[string]interface{}, error) {
+// Handles both @type array and single @type, and unwraps @graph entries.
+func (p *Parser) ExtractJSONLD(ctx context.Context, html []byte) ([]map[string]interface{}, error) {
 	doc, err := goquery.NewDocumentFromReader(bytes.NewReader(html))
 	if err != nil {
 		return nil, fmt.Errorf("scraper: parse HTML: %w", err)
@@ -161,13 +176,60 @@ func (p *Parser) ExtractJSONLD(html []byte) ([]map[string]interface{}, error) {
 
 	var results []map[string]interface{}
 	doc.Find("script[type=application/ld+json]").Each(func(_ int, s *goquery.Selection) {
-		text := s.Text()
-		// Simple JSON-LD parsing without importing a full JSON-LD library.
-		_ = text
-		// The full implementation would parse the JSON and extract @graph entries.
+		if ctx != nil && ctx.Err() != nil {
+			return
+		}
+		text := strings.TrimSpace(s.Text())
+		if text == "" {
+			return
+		}
+
+		// Try parsing as a JSON array first.
+		var arr []map[string]interface{}
+		if err := json.Unmarshal([]byte(text), &arr); err == nil {
+			for _, item := range arr {
+				if m := extractGraph(item); m != nil {
+					results = append(results, m)
+				}
+			}
+			return
+		}
+
+		// Fall back to single object.
+		var obj map[string]interface{}
+		if err := json.Unmarshal([]byte(text), &obj); err == nil {
+			if m := extractGraph(obj); m != nil {
+				results = append(results, m)
+			}
+		}
 	})
 
+	if err := contextErr(ctx); err != nil {
+		return nil, err
+	}
 	return results, nil
+}
+
+func contextErr(ctx context.Context) error {
+	if ctx == nil || ctx.Err() == nil {
+		return nil
+	}
+	return fmt.Errorf("scraper: parse cancelled: %w", ctx.Err())
+}
+
+// extractGraph unwraps JSON-LD @graph arrays, returning the innermost item
+// or the original if no @graph is present.
+func extractGraph(item map[string]interface{}) map[string]interface{} {
+	if graph, ok := item["@graph"].([]interface{}); ok && len(graph) > 0 {
+		// Prefer the main entity (last @type != Article/ItemPage/WebPage).
+		for i := len(graph) - 1; i >= 0; i-- {
+			if m, ok := graph[i].(map[string]interface{}); ok {
+				item = m
+				break
+			}
+		}
+	}
+	return item
 }
 
 // GetFaviconURL returns the favicon URL for a page.

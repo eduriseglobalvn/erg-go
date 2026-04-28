@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 	"go.mongodb.org/mongo-driver/v2/mongo/readpref"
@@ -87,10 +88,12 @@ func NewMongoClient(ctx context.Context, cfg config.MongoDBConfig, opts ...Mongo
 	}
 
 	// Verify the connection.
-	pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	pingCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	if err := m.client.Ping(pingCtx, rp); err != nil {
-		_ = m.client.Disconnect(context.Background())
+		if disconnectErr := m.client.Disconnect(context.Background()); disconnectErr != nil {
+			m.log.Warn().Err(disconnectErr).Msg("mongo: disconnect after ping failure failed")
+		}
 		return nil, fmt.Errorf("mongo: ping: %w", err)
 	}
 
@@ -138,11 +141,29 @@ func (m *MongoClient) Close(ctx context.Context) error {
 	m.mu.Unlock()
 
 	m.log.Info().Msg("mongodb disconnecting")
-	_ = m.client.Disconnect(ctx)
+	if err := m.client.Disconnect(ctx); err != nil {
+		return fmt.Errorf("mongo: disconnect: %w", err)
+	}
 	return nil
 }
 
-// IsDuplicateKey checks if the error is a MongoDB duplicate key error (code 11000).
+// DatabaseName returns the configured database name.
+func (m *MongoClient) DatabaseName() string {
+	return m.cfg.Database
+}
+
+// NewID generates a new MongoDB ObjectID as a hex string.
+func NewID() string {
+	return bson.NewObjectID().Hex()
+}
+
+// ParseObjectID converts a hex string to a mongo-driver ObjectID.
+// Returns the ObjectID and true on success, or zero ObjectID and false on failure.
+func ParseObjectID(hex string) (bson.ObjectID, bool) {
+	id, err := bson.ObjectIDFromHex(hex)
+	return id, err == nil
+}
+
 func IsDuplicateKey(err error) bool {
 	if err == nil {
 		return false

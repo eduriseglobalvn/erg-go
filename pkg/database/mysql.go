@@ -1,4 +1,7 @@
-// Package database provides MySQL/PostgreSQL support via pgx v5.
+// Package database provides MySQL/PostgreSQL support via GORM v2 and pgx v5.
+// MongoDB uses the go.mongodb.org/mongo-driver directly (see mongo.go).
+// Note: gorm.io/driver/mongodb does NOT exist — GORM v2 officially supports
+// only PostgreSQL, MySQL, SQLite, SQL Server, TiDB, Clickhouse, GaussDB, Oracle.
 package database
 
 import (
@@ -6,147 +9,145 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
-
-	"erg.ninja/pkg/config"
 	"erg.ninja/pkg/logger"
+	"gorm.io/driver/mysql"
+	"gorm.io/gorm"
+	gormlog "gorm.io/gorm/logger"
 )
 
-// MySQLClient wraps a pgxpool.Pool with configuration and lifecycle management.
-type MySQLClient struct {
-	pool *pgxpool.Pool
-	cfg  config.DatabaseConfig
-	log  *logger.Logger
+// MySQLConfig holds MySQL connection settings for GORMMySQLClient.
+type MySQLConfig struct {
+	Host            string
+	Port            int
+	User            string
+	Password        string
+	Database        string
+	MaxOpenConns    int
+	MaxIdleConns    int
+	ConnMaxLifetime time.Duration
 }
 
-// MySQLOption configures a MySQLClient.
-type MySQLOption func(*MySQLClient)
+// GORMMySQLClient wraps a GORM *gorm.DB connected to MySQL via gorm.io/driver/mysql.
+type GORMMySQLClient struct {
+	db  *gorm.DB
+	cfg MySQLConfig
+	log *logger.Logger
+}
 
-// WithMySQLLogger sets the logger for the MySQL client.
+// MySQLOption configures a GORMMySQLClient.
+type MySQLOption func(*GORMMySQLClient)
+
+// WithMySQLLogger sets the logger for the GORMMySQLClient.
 func WithMySQLLogger(log *logger.Logger) MySQLOption {
-	return func(m *MySQLClient) {
-		m.log = log
-	}
+	return func(g *GORMMySQLClient) { g.log = log }
 }
 
-// NewMySQLClient creates a new pgx connection pool from the given configuration.
-func NewMySQLClient(ctx context.Context, cfg config.DatabaseConfig, opts ...MySQLOption) (*MySQLClient, error) {
-	m := &MySQLClient{cfg: cfg, log: logger.NoOp()}
+// NewGORMMySQLClient creates a new GORM MySQL connection from MySQLConfig.
+// Uses gorm.io/driver/mysql under the hood.
+// A 5-second context timeout is applied for the initial connection and ping.
+func NewGORMMySQLClient(ctx context.Context, cfg MySQLConfig, opts ...MySQLOption) (*GORMMySQLClient, error) {
+	g := &GORMMySQLClient{cfg: cfg, log: logger.NoOp()}
 	for _, o := range opts {
-		o(m)
+		o(g)
 	}
 
-	connStr := buildPgConnStr(cfg)
+	// Apply defaults.
+	if g.cfg.Port == 0 {
+		g.cfg.Port = 3306
+	}
+	if g.cfg.MaxOpenConns == 0 {
+		g.cfg.MaxOpenConns = 25
+	}
+	if g.cfg.MaxIdleConns == 0 {
+		g.cfg.MaxIdleConns = 10
+	}
+	if g.cfg.ConnMaxLifetime == 0 {
+		g.cfg.ConnMaxLifetime = 5 * time.Minute
+	}
 
-	poolCfg, err := pgxpool.ParseConfig(connStr)
+	dsn := buildMySQLDSN(g.cfg)
+
+	gormConfig := &gorm.Config{
+		// Suppress GORM's default logger — we use zerolog instead.
+		Logger: gormlog.Default.LogMode(gormlog.Silent),
+		NowFunc: func() time.Time {
+			return time.Now().UTC()
+		},
+	}
+
+	db, err := gorm.Open(mysql.Open(dsn), gormConfig)
 	if err != nil {
-		return nil, fmt.Errorf("mysql: parse config: %w", err)
+		return nil, fmt.Errorf("mysql: open connection: %w", err)
 	}
 
-	poolCfg.MaxConns = int32(cfg.MaxOpenConns)
-	poolCfg.MinConns = int32(cfg.MaxIdleConns)
-	poolCfg.MaxConnLifetime = cfg.ConnMaxLifetime
-	poolCfg.MaxConnIdleTime = cfg.ConnMaxIdleTime
-	poolCfg.HealthCheckPeriod = 30 * time.Second
-
-	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
+	sqlDB, err := db.DB()
 	if err != nil {
-		return nil, fmt.Errorf("mysql: create pool: %w", err)
+		return nil, fmt.Errorf("mysql: get underlying sql.DB: %w", err)
 	}
 
-	// Verify connectivity.
-	if err := pool.Ping(ctx); err != nil {
-		pool.Close()
+	// Connection pool settings.
+	sqlDB.SetMaxOpenConns(g.cfg.MaxOpenConns)
+	sqlDB.SetMaxIdleConns(g.cfg.MaxIdleConns)
+	sqlDB.SetConnMaxLifetime(g.cfg.ConnMaxLifetime)
+
+	// Verify connectivity with a short timeout.
+	ctx2, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	if err := sqlDB.PingContext(ctx2); err != nil {
 		return nil, fmt.Errorf("mysql: ping: %w", err)
 	}
 
-	m.pool = pool
-	m.log.Info().Str("database", cfg.Name).Msg("mysql/postgres connected")
+	g.db = db
+	g.log.Info().
+		Str("database", g.cfg.Database).
+		Str("host", g.cfg.Host).
+		Int("port", g.cfg.Port).
+		Int("max_open_conns", g.cfg.MaxOpenConns).
+		Msg("mysql connected via GORM")
 
-	return m, nil
+	return g, nil
 }
 
-// Pool returns the underlying pgxpool.Pool.
-func (m *MySQLClient) Pool() *pgxpool.Pool {
-	return m.pool
+// DB returns the underlying GORM *gorm.DB instance. Use for all GORM operations.
+func (g *GORMMySQLClient) DB() *gorm.DB {
+	return g.db
 }
 
-// Close shuts down the connection pool.
-func (m *MySQLClient) Close() {
-	if m.pool == nil {
-		return
+// Close shuts down the MySQL connection pool.
+func (g *GORMMySQLClient) Close() error {
+	sqlDB, err := g.db.DB()
+	if err != nil {
+		return fmt.Errorf("mysql: get underlying sql.DB: %w", err)
 	}
-	m.pool.Close()
+	if err := sqlDB.Close(); err != nil {
+		return fmt.Errorf("mysql: close: %w", err)
+	}
+	g.log.Info().Msg("mysql connection closed")
+	return nil
 }
 
 // Ping checks database connectivity.
-func (m *MySQLClient) Ping(ctx context.Context) error {
-	return m.pool.Ping(ctx)
-}
-
-// QueryRow executes a query that returns a single row, wrapping the error with the SQL text.
-func (m *MySQLClient) QueryRow(ctx context.Context, sql string, args ...any) pgx.Row {
-	return m.pool.QueryRow(ctx, sql, args...)
-}
-
-// Query executes a query, wrapping errors with the SQL text.
-func (m *MySQLClient) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
-	rows, err := m.pool.Query(ctx, sql, args...)
+func (g *GORMMySQLClient) Ping(ctx context.Context) error {
+	sqlDB, err := g.db.DB()
 	if err != nil {
-		return nil, fmt.Errorf("mysql: query %s: %w", sql, err)
+		return err
 	}
-	return rows, nil
+	return sqlDB.PingContext(ctx)
 }
 
-// Exec executes a query that does not return rows, wrapping errors.
-func (m *MySQLClient) Exec(ctx context.Context, sql string, args ...any) error {
-	_, err := m.pool.Exec(ctx, sql, args...)
-	if err != nil {
-		return fmt.Errorf("mysql: exec %s: %w", sql, err)
-	}
-	return nil
+// AutoMigrate runs GORM AutoMigrate for the given models.
+func (g *GORMMySQLClient) AutoMigrate(dst ...interface{}) error {
+	return g.db.AutoMigrate(dst...)
 }
 
-// QueryTx executes a query within a transaction.
-func (m *MySQLClient) QueryTx(ctx context.Context, tx pgx.Tx, sql string, args ...any) (pgx.Rows, error) {
-	rows, err := tx.Query(ctx, sql, args...)
-	if err != nil {
-		return nil, fmt.Errorf("mysql: query tx %s: %w", sql, err)
-	}
-	return rows, nil
-}
-
-// ExecTx executes a statement within a transaction.
-func (m *MySQLClient) ExecTx(ctx context.Context, tx pgx.Tx, sql string, args ...any) error {
-	_, err := tx.Exec(ctx, sql, args...)
-	if err != nil {
-		return fmt.Errorf("mysql: exec tx %s: %w", sql, err)
-	}
-	return nil
-}
-
-// BeginTx starts a new transaction with the given options.
-func (m *MySQLClient) BeginTx(ctx context.Context, opts pgx.TxOptions) (pgx.Tx, error) {
-	tx, err := m.pool.BeginTx(ctx, opts)
-	if err != nil {
-		return nil, fmt.Errorf("mysql: begin tx: %w", err)
-	}
-	return tx, nil
-}
-
-// buildPgConnStr builds a lib/pq-compatible connection string from config.
-func buildPgConnStr(cfg config.DatabaseConfig) string {
-	// Support both MySQL and PostgreSQL connection strings via pgx.
-	// For MySQL, use mysql:// scheme; for PostgreSQL, postgresql://.
-	// Default to postgresql since we're using pgx (PostgreSQL driver).
-	connStr := fmt.Sprintf(
-		"postgres://%s:%s@%s:%d/%s?sslmode=disable",
+// buildMySQLDSN builds a MySQL DSN string from MySQLConfig.
+func buildMySQLDSN(cfg MySQLConfig) string {
+	return fmt.Sprintf(
+		"%s:%s@tcp(%s:%d)/%s?charset=utf8mb4&parseTime=True&loc=Local",
 		cfg.User,
 		cfg.Password,
 		cfg.Host,
 		cfg.Port,
-		cfg.Name,
+		cfg.Database,
 	)
-	return connStr
 }

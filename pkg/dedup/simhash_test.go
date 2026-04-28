@@ -11,8 +11,8 @@ func TestInMemoryStore(t *testing.T) {
 
 	entry := &Entry{
 		Fingerprint: Fingerprint{SimHash: 0x1234567890ABCDEF, SHA256: sha256Of("hello")},
-		URL:        "https://example.com/article",
-		Bucket:     0x1234,
+		URL:         "https://example.com/article",
+		Bucket:      0x1234,
 	}
 
 	if err := store.StoreFingerprint(ctx, entry); err != nil {

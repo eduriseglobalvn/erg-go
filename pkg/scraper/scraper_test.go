@@ -1,7 +1,6 @@
 package scraper
 
 import (
-	"strings"
 	"testing"
 	"time"
 
@@ -97,8 +96,8 @@ Crawl-delay: 3
 	if !p.CanBeFetched("other-agent", "https://example.com/index") {
 		t.Error("/index should be allowed for other-agent")
 	}
-	if p.CanBeFetched("other-agent", "https://example.com/admin") {
-		t.Error("/admin should be disallowed")
+	if p.CanBeFetched("other-agent", "https://example.com/admin/") {
+		t.Error("/admin/ should be disallowed (rule has trailing slash)")
 	}
 	delay := p.CrawlDelay("other-agent")
 	if delay == 0 {
@@ -124,6 +123,25 @@ func TestMatchesPath(t *testing.T) {
 		if got != c.expected {
 			t.Errorf("matchesPath(%q, %q) = %v, want %v", c.path, c.pattern, got, c.expected)
 		}
+	}
+}
+
+func TestPathRegexCacheBounded(t *testing.T) {
+	regexCacheMu.Lock()
+	regexCache = newPathRegexCache(4)
+	regexCacheMu.Unlock()
+
+	for _, pattern := range []string{"/a/*", "/b/*", "/c/*", "/d/*", "/e/*"} {
+		_ = getPathRegex(pattern)
+	}
+
+	regexCacheMu.Lock()
+	defer regexCacheMu.Unlock()
+	if got := regexCache.Len(); got != 4 {
+		t.Fatalf("regex cache len = %d, want 4", got)
+	}
+	if _, ok := regexCache.Get("/a/*"); ok {
+		t.Fatal("expected oldest regex entry to be evicted")
 	}
 }
 

@@ -1,0 +1,234 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag to release (e.g. v1.0.0)'
+        required: true
+        type: string
+
+env:
+  GO_VERSION: "1.22"
+  DOCKER_REGISTRY: ghcr.io
+  IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+
+jobs:
+  # ── Generate proto ──────────────────────────────────────────────────────────
+  proto-generate:
+    name: Generate Proto
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Install protoc plugins
+        run: |
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+
+      - name: Install buf
+        uses: bufbuild/buf-setup-action@v1
+        with:
+          version: "1.28"
+
+      - name: Generate Go from proto
+        run: |
+          for svc in bot crawler notification trending; do
+            proto_dir="proto/lib/${svc}/v1"
+            lib_dir="lib/${svc}/v1"
+            echo "Generating ${lib_dir} from ${proto_dir}..."
+            mkdir -p "${lib_dir}"
+            buf generate --template "buf.gen.yaml" "${proto_dir}/"
+          done
+
+      - name: Upload generated artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: generated-proto
+          path: lib/
+          retention-days: 5
+
+  # ── Build + test ───────────────────────────────────────────────────────────
+  build:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: proto-generate
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download generated proto
+        uses: actions/download-artifact@v4
+        with:
+          name: generated-proto
+          path: lib/
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Build all packages
+        run: go build ./...
+
+      - name: Run tests
+        run: go test ./... -race -count=1 -timeout=5m
+
+  # ── Cross-compile binaries ──────────────────────────────────────────────────
+  cross-compile:
+    name: Cross-compile
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: build
+    strategy:
+      matrix:
+        goos: [linux, darwin, windows]
+        goarch: [amd64, arm64]
+        exclude:
+          - goos: windows
+            goarch: arm64
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Build service binaries
+        run: |
+          CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} \
+            go build -ldflags="-s -w" \
+            -o bin/erg-${{ matrix.goos }}-${{ matrix.goarch }} \
+            ./cmd/server
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: bin/
+          retention-days: 5
+
+  # ── Build and push Docker image ─────────────────────────────────────────────
+  docker:
+    name: Docker Image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: build
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download generated proto
+        uses: actions/download-artifact@v4
+        with:
+          name: generated-proto
+          path: lib/
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.DOCKER_REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract version from tag
+        id: vars
+        run: |
+          TAG=${GITHUB_REF#refs/tags/}
+          echo "version=${TAG}" >> $GITHUB_OUTPUT
+          echo "short=${TAG#v}" >> $GITHUB_OUTPUT
+
+      - name: Build and push multi-arch Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.DOCKER_REGISTRY }}/${{ github.repository }}/erg-server:${{ steps.vars.outputs.version }}
+            ${{ env.DOCKER_REGISTRY }}/${{ github.repository }}/erg-server:${{ steps.vars.outputs.short }}
+            ${{ env.DOCKER_REGISTRY }}/${{ github.repository }}/erg-server:latest
+          platforms: linux/amd64,linux/arm64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ── Create GitHub Release ───────────────────────────────────────────────────
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [proto-generate, build, cross-compile, docker]
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: releases/
+
+      - name: Prepare release directory
+        run: |
+          mkdir -p releases/${{ github.ref_name }}/proto
+          mkdir -p releases/${{ github.ref_name }}/bin
+
+          # Copy proto sources
+          cp -r proto/lib/* releases/${{ github.ref_name }}/proto/
+
+          # Copy binaries
+          for dir in releases/binary-*; do
+            cp "$dir"/* releases/${{ github.ref_name }}/bin/ 2>/dev/null || true
+          done
+
+      - name: Generate changelog
+        run: |
+          CHANGELOG="## What's Changed\n\n"
+          CHANGELOG+=$(git log --oneline --since="$(git log -1 --format=%ci HEAD~10)" ...HEAD | head -20 | sed 's/^/  - /' || echo "  - See commits")
+          echo "$CHANGELOG" > releases/${{ github.ref_name }}/CHANGELOG.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          body_path: releases/${{ github.ref_name }}/CHANGELOG.md
+          draft: false
+          prerelease: ${{ contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') }}
+          generate_release_notes: true
+          files: |
+            releases/${{ github.ref_name }}/bin/*
+            releases/${{ github.ref_name }}/proto/**/*

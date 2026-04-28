@@ -1,9 +1,0 @@
-go 1.25.0
-
-use (
-	.
-	./cmd/bot-service
-	./cmd/notification-service
-	./cmd/crawler-service
-	./cmd/trending-service
-)

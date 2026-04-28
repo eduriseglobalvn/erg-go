@@ -60,8 +60,9 @@ func TestParseURLSet(t *testing.T) {
 func TestParseSitemapIndex(t *testing.T) {
 	p := NewParser()
 	sm := &Sitemap{}
-	if err := p.parseSitemapIndex([]byte(sampleSitemapIndex), sm); err != nil {
-		t.Fatalf("parseSitemapIndex: %v", err)
+	// parseSitemapXML sets IsIndex then delegates to parseSitemapIndex.
+	if err := p.parseSitemapXML([]byte(sampleSitemapIndex), sm); err != nil {
+		t.Fatalf("parseSitemapXML: %v", err)
 	}
 	if !sm.IsIndex {
 		t.Error("should be identified as a sitemap index")

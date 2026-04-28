@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -17,15 +18,15 @@ import (
 
 // Client wraps the Gemini API for CSS selector suggestions and content analysis.
 type Client struct {
-	apiKey    string
-	model     string
-	timeout   time.Duration
-	log       *logger.Logger
-	redis     *cache.RedisClient
-	cacheTTL  time.Duration
-	client    *http.Client
-	mu        sync.RWMutex
-	inMemory  map[string]*cachedResult
+	apiKey   string
+	model    string
+	timeout  time.Duration
+	log      *logger.Logger
+	redis    *cache.RedisClient
+	cacheTTL time.Duration
+	client   *http.Client
+	mu       sync.RWMutex
+	inMemory map[string]*cachedResult
 }
 
 // ClientOption configures a Client.
@@ -150,8 +151,8 @@ func (c *Client) generateContent(ctx context.Context, prompt string) (string, er
 		},
 		"generationConfig": map[string]interface{}{
 			"temperature":     0.7,
-			"maxOutputTokens":  2048,
-			"topP":             0.9,
+			"maxOutputTokens": 2048,
+			"topP":            0.9,
 		},
 	}
 
@@ -236,7 +237,9 @@ func (c *Client) setCached(ctx context.Context, key, response string) {
 
 	// Store in Redis if configured.
 	if c.redis != nil {
-		_ = c.redis.Set(ctx, "ai:cache:"+key, response, c.cacheTTL)
+		if err := c.redis.Set(ctx, "ai:cache:"+key, response, c.cacheTTL); err != nil {
+			c.log.WarnContext(ctx).Err(err).Str("key", key).Msg("gemini: cache write failed")
+		}
 	}
 }
 
@@ -268,19 +271,13 @@ func parseSelectors(response string) ([]string, error) {
 	return nil, fmt.Errorf("ai: cannot parse selectors from response: %s", trimString(response, 200))
 }
 
-// trimBackticks removes triple backticks and optional "json" label.
+// trimBackticks removes triple backticks and optional "json"/"js" language label.
 func trimBackticks(s string) string {
-	s = trimString(s, len(s))
-	if len(s) >= 6 && s[:3] == "```" {
-		s = s[3:]
-		if len(s) > 0 && (s[0] == 'j' || s[0] == 'J') {
-			s = s[1:]
-		}
-	}
-	if len(s) >= 3 && s[len(s)-3:] == "```" {
-		s = s[:len(s)-3]
-	}
-	return s
+	s = strings.TrimPrefix(s, "```json")
+	s = strings.TrimPrefix(s, "```JSON")
+	s = strings.TrimPrefix(s, "```")
+	s = strings.TrimSuffix(s, "```")
+	return strings.TrimSpace(s)
 }
 
 func trimString(s string, maxLen int) string {

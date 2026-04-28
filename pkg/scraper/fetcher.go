@@ -83,12 +83,12 @@ func NewFetcher(cfg config.ScraperConfig, opts ...FetcherOption) *Fetcher {
 
 // FetchResult holds the result of a page fetch.
 type FetchResult struct {
-	URL        string
-	StatusCode int
-	Body       []byte
+	URL         string
+	StatusCode  int
+	Body        []byte
 	ContentType string
-	Duration   time.Duration
-	Error      error
+	Duration    time.Duration
+	Error       error
 }
 
 // Fetch fetches a URL, respecting robots.txt and applying anti-blocking delays.
@@ -291,6 +291,7 @@ func (f *Fetcher) selectProxy() (*url.URL, error) {
 }
 
 // FetchRobotsTxt fetches and returns the robots.txt content for a base URL.
+// Respects context deadline/cancellation and enforces a 1 MB max response.
 func FetchRobotsTxt(ctx context.Context, baseURL string) ([]byte, error) {
 	u, err := url.Parse(baseURL)
 	if err != nil {
@@ -303,8 +304,25 @@ func FetchRobotsTxt(ctx context.Context, baseURL string) ([]byte, error) {
 		return nil, fmt.Errorf("scraper: new robots.txt request: %w", err)
 	}
 	req.Header.Set("User-Agent", "erg-crawler/1.0")
+	req.Header.Set("Accept", "text/plain,text/html,*/*")
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	// Honor context deadline; cap at 10s so a nil context never blocks forever.
+	deadline := 10 * time.Second
+	if d, ok := ctx.Deadline(); ok {
+		if remaining := time.Until(d); remaining > 0 && remaining < deadline {
+			deadline = remaining
+		}
+	}
+
+	client := &http.Client{
+		Timeout: deadline,
+		Transport: &http.Transport{
+			MaxIdleConns:        5,
+			IdleConnTimeout:     30 * time.Second,
+			TLSHandshakeTimeout: 5 * time.Second,
+		},
+	}
+
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("scraper: fetch robots.txt: %w", err)

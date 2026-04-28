@@ -50,6 +50,10 @@ func main() {
 		if err := migrations.Run002NotificationIndexes(ctx, db); err != nil {
 			log.Fatalf("notification migration failed: %v", err)
 		}
+		// Migration 005: read indexes for markAsRead + unreadCount
+		if err := migrations.Run005NotificationReadIndexes(ctx, db); err != nil {
+			log.Fatalf("notification read-index migration failed: %v", err)
+		}
 	case "crawler":
 		if err := migrations.Run003CrawlerIndexes(ctx, db); err != nil {
 			log.Fatalf("crawler migration failed: %v", err)

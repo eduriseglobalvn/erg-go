@@ -1,0 +1,8 @@
+[build]
+  bin = "./tmp/erg-server"
+  cmd = "make swag && go build -o ./tmp/erg-server ./cmd/server"
+  delay = 1000
+  exclude_dir = ["tmp", "vendor", ".git", "migrations", "docs"]
+[misc]
+  close_on_error = true
+  clean_on_exit = true

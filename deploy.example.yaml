@@ -1,0 +1,141 @@
+# deploy.example.yaml — Example service composition manifest for erg-go.
+#
+# Usage:
+#   1. Copy to deploy.yaml
+#   2. Enable/disable services as needed
+#   3. Adjust ports, dependencies, and per-service config
+#   4. Run: erg-server (auto-loads deploy.yaml if compose.enabled: true)
+#
+# The manifest declares services and their dependencies. The compose engine
+# resolves dependency order and starts services in the correct sequence.
+#
+# KEY CONCEPTS:
+#   - enabled: false  → service is defined but NOT started (safe for dependency declarations)
+#   - dependencies: [] → service starts with no prerequisites
+#   - config: {}       → per-service config overrides merged on top of config.yaml
+#
+# Dependency rules (resolved via Kahn's topological sort):
+#   - A service's dependencies start BEFORE the service itself
+#   - A service can only start when ALL its dependencies are running
+#   - Bot requires BOTH crawler AND trending to be available
+
+# ── COMPOSE ENGINE ──────────────────────────────────────────────────────────────
+# Top-level compose settings.
+compose:
+  # Set enabled: true to activate the compose engine (config-driven composition).
+  # When enabled: false, erg-go falls back to legacy routes.Register() wiring.
+  enabled: false
+
+# ── SERVICE MANIFEST ───────────────────────────────────────────────────────────
+# Each entry describes a single erg-go module that can be started.
+services:
+
+  # ── Crawler Service ──────────────────────────────────────────────────────────
+  # RSS/Atom feed aggregator + web crawler.
+  # No dependencies — starts first as a foundation service.
+  - name: crawler
+    enabled: true
+    port: 8083                    # HTTP API port
+    healthz: /healthz            # Health check endpoint
+    # Cron schedules for automated feed refresh (bot calls crawler, crawler calls RSS).
+    schedule:
+      feed_refresh: "*/15 * * * *"  # Refresh feeds every 15 minutes
+    dependencies: []              # No dependencies — base service
+    config:
+      scraper:
+        min_delay: 3s
+        max_delay: 10s
+        timeout: 30s
+        max_retries: 3
+      queue:
+        concurrency: 10
+        retry_backoff: true
+
+  # ── Notification Service ─────────────────────────────────────────────────────
+  # Sends notifications via Discord, Telegram, WhatsApp, and email.
+  # No dependencies — can send alerts without other services running.
+  - name: notification
+    enabled: true
+    port: 8084
+    healthz: /healthz
+    dependencies: []              # Standalone — sends alerts independently
+    config:
+      discord:
+        enabled: true
+        # webhook_url: ""         # Set via env: SECRET_discord.webhook_url
+      telegram:
+        enabled: false
+        # bot_token: ""           # Set via env: SECRET_telegram.bot_token
+      smtp:
+        enabled: false
+        host: smtp.example.com
+        port: 587
+
+  # ── Trending Service ─────────────────────────────────────────────────────────
+  # Aggregates trending topics from crawler output.
+  # Depends on crawler — needs crawled articles to compute trends.
+  - name: trending
+    enabled: true
+    port: 8085
+    healthz: /healthz
+    schedule:
+      trending_refresh: "*/30 * * * *"  # Recompute trending every 30 min
+    dependencies:
+      - crawler              # Requires crawled articles from crawler
+    config:
+      trending:
+        cache_ttl: 25m
+        feed_limit: 100
+        topics_limit: 20
+        news_limit: 20
+        min_hot_score: 75
+
+  # ── Bot Service ───────────────────────────────────────────────────────────────
+  # Unified bot with Telegram + Discord support.
+  # Depends on crawler (RSS commands) + trending (hot topic commands).
+  # Starts AFTER both crawler and trending are ready.
+  - name: bot
+    enabled: true
+    port: 8086
+    healthz: /healthz
+    dependencies:
+      - crawler              # For "rss add", "crawl start" commands
+      - trending             # For "hot", "trending" commands
+    config:
+      bot:
+        command_prefix: "/"
+        wizard_ttl_minutes: 5
+        rate_limit_per_user: 20
+        max_conversations: 10000
+        enable_link_command: true
+      discord:
+        enabled: true
+        # token: ""             # Set via env: SECRET_discord.token
+      telegram:
+        enabled: false
+        # bot_token: ""         # Set via env: SECRET_telegram.bot_token
+
+# ── NOTES ───────────────────────────────────────────────────────────────────────
+#
+# PORT ASSIGNMENTS (avoid conflicts when running multiple services):
+#   crawler       → 8083
+#   notification  → 8084
+#   trending      → 8085
+#   bot           → 8086
+#
+# STARTUP ORDER (resolved automatically):
+#   1. crawler       (no deps)
+#   2. notification  (no deps)
+#   3. trending      (needs crawler)
+#   4. bot           (needs crawler + trending)
+#
+# SHUTDOWN ORDER (reverse of startup):
+#   1. bot           → trending → notification → crawler
+#
+# MULTI-TENANCY:
+#   Set tenant.enabled: true in config.yaml. Each service then scopes
+#   MongoDB queries and Redis keys by X-Tenant-ID header.
+#
+# SERVICE DISCOVERY:
+#   Set discovery.enabled: true in config.yaml. When active, lib/ clients
+#   use discovery:///service-name instead of localhost:PORT.

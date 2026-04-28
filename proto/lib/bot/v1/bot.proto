@@ -1,0 +1,323 @@
+syntax = "proto3";
+
+package erg.ninja.lib.bot.v1;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/struct.proto";
+
+option go_package = "erg.ninja/lib/bot/v1;botv1";
+
+// ── Enums ──────────────────────────────────────────────────────────────────────
+
+enum Platform {
+  PLATFORM_UNSPECIFIED = 0;
+  PLATFORM_TELEGRAM    = 1;
+  PLATFORM_DISCORD     = 2;
+}
+
+enum ConversationStatus {
+  CONV_STATUS_UNSPECIFIED = 0;
+  CONV_STATUS_ACTIVE      = 1;
+  CONV_STATUS_PENDING      = 2;
+  CONV_STATUS_CLOSED       = 3;
+}
+
+enum WorkflowStatus {
+  WORKFLOW_STATUS_UNSPECIFIED = 0;
+  WORKFLOW_STATUS_RUNNING     = 1;
+  WORKFLOW_STATUS_PAUSED      = 2;
+  WORKFLOW_STATUS_FAILED      = 3;
+  WORKFLOW_STATUS_COMPLETED   = 4;
+  WORKFLOW_STATUS_CANCELED    = 5;
+}
+
+enum CommandResult {
+  COMMAND_RESULT_UNSPECIFIED = 0;
+  COMMAND_RESULT_SUCCESS     = 1;
+  COMMAND_RESULT_NOT_FOUND   = 2;
+  COMMAND_RESULT_NO_PERMISSION = 3;
+  COMMAND_RESULT_ERROR       = 4;
+  COMMAND_RESULT_COOLDOWN    = 5;
+}
+
+// ── Conversation Messages ────────────────────────────────────────────────────────
+
+message ListConversationsRequest {
+  string               tenant_id    = 1;
+  ConversationStatus  status       = 2;
+  int32               page_size    = 3;
+  string              page_token   = 4;
+}
+
+message Conversation {
+  string                     id            = 1;
+  string                     user_id       = 2;
+  Platform                   platform      = 3;
+  string                     platform_user_id = 4;
+  ConversationStatus         status        = 5;
+  google.protobuf.Timestamp  started_at   = 6;
+  google.protobuf.Timestamp  last_message_at = 7;
+  int32                      message_count = 8;
+}
+
+message ListConversationsResponse {
+  repeated Conversation conversations  = 1;
+  string                next_page_token = 2;
+  int32                 total_count    = 3;
+}
+
+message GetConversationRequest {
+  string id        = 1;
+  string tenant_id = 2;
+}
+
+message GetConversationResponse {
+  Conversation conversation = 1;
+}
+
+message SendMessageRequest {
+  string                     conversation_id = 1;
+  string                     tenant_id       = 2;
+  string                     message         = 3;
+  google.protobuf.Struct      data           = 4;  // template variables
+  google.protobuf.Timestamp   scheduled_at   = 5;  // optional scheduled send
+}
+
+message SendMessageResponse {
+  string                     message_id    = 1;
+  google.protobuf.Timestamp  sent_at       = 2;
+  string                    status        = 3;
+}
+
+// ── Wizard Messages ─────────────────────────────────────────────────────────────
+
+message GetWizardStateRequest {
+  string conversation_id = 1;
+  string tenant_id       = 2;
+}
+
+message WizardState {
+  string                     id           = 1;
+  string                     conversation_id = 2;
+  string                     user_id      = 3;
+  string                     current_step = 4;
+  map<string, string>        data         = 5;
+  repeated WizardStepDef     steps        = 6;
+  google.protobuf.Timestamp  started_at   = 7;
+  google.protobuf.Timestamp  expires_at   = 8;
+}
+
+message WizardStepDef {
+  string name        = 1;
+  string prompt      = 2;
+  string next_step   = 3;
+  bool   required    = 4;
+}
+
+message AdvanceWizardRequest {
+  string conversation_id = 1;
+  string tenant_id       = 2;
+  string input           = 3;
+}
+
+message AdvanceWizardResponse {
+  WizardState      state    = 1;
+  bool             done     = 2;
+  string           message  = 3;
+}
+
+message CancelWizardRequest {
+  string conversation_id = 1;
+  string tenant_id       = 2;
+}
+
+message CancelWizardResponse {
+  bool   canceled = 1;
+  string message  = 2;
+}
+
+// ── Workflow Messages ────────────────────────────────────────────────────────────
+
+message ListWorkflowsRequest {
+  string            tenant_id   = 1;
+  WorkflowStatus    status      = 2;
+  string            user_id     = 3;
+  int32             page_size   = 4;
+  string            page_token  = 5;
+}
+
+// WorkflowStep represents a single step in an automation workflow.
+message WorkflowStep {
+  string            name       = 1;  // step identifier e.g. "send_discord"
+  string            step_type  = 2;  // "action"|"condition"|"delay"
+  map<string, string> params   = 3;  // action-specific parameters
+  int32             max_retries = 4;
+  google.protobuf.Struct config = 5;  // rich step configuration
+}
+
+message Workflow {
+  string                     id              = 1;
+  string                     conversation_id  = 2;
+  string                     user_id          = 3;
+  WorkflowStatus             status           = 4;
+  string                     current_step     = 5;
+  map<string, string>        data             = 6;
+  int32                      max_retries      = 7;
+  int32                      retry_count      = 8;
+  google.protobuf.Timestamp  started_at       = 9;
+  google.protobuf.Timestamp  completed_at     = 10;
+}
+
+message ListWorkflowsResponse {
+  repeated Workflow workflows     = 1;
+  string               next_page_token = 2;
+  int32                total_count    = 3;
+}
+
+message GetWorkflowRequest {
+  string workflow_id = 1;
+  string tenant_id   = 2;
+}
+
+message GetWorkflowResponse {
+  Workflow workflow = 1;
+}
+
+message StartWorkflowRequest {
+  string               tenant_id       = 1;
+  string               conversation_id = 2;
+  string               user_id         = 3;
+  repeated WorkflowStep steps          = 4;
+  map<string, string>  initial_data    = 5;
+}
+
+message StartWorkflowResponse {
+  string   workflow_id = 1;
+  Workflow workflow    = 2;
+}
+
+message CancelWorkflowRequest {
+  string workflow_id = 1;
+  string tenant_id   = 2;
+}
+
+message CancelWorkflowResponse {
+  bool   canceled = 1;
+  string message  = 2;
+}
+
+// ── Account Linking Messages ────────────────────────────────────────────────────
+
+message CreateLinkCodeRequest {
+  string tenant_id    = 1;
+  string user_id      = 2;
+  Platform platform   = 3;
+}
+
+message CreateLinkCodeResponse {
+  string code          = 1;  // 6-char alphanumeric
+  string expires_at    = 2;  // ISO timestamp
+}
+
+message VerifyLinkCodeRequest {
+  string tenant_id      = 1;
+  Platform platform     = 2;
+  string platform_user_id = 3;
+  string code           = 4;
+}
+
+message VerifyLinkCodeResponse {
+  bool   success   = 1;
+  string message   = 2;
+  string link_id   = 3;
+}
+
+message ListLinkedAccountsRequest {
+  string tenant_id = 1;
+  string user_id   = 2;
+}
+
+message LinkedAccount {
+  string                     id               = 1;
+  Platform                   platform         = 2;
+  string                     platform_user_id = 3;
+  google.protobuf.Timestamp  linked_at        = 4;
+  google.protobuf.Timestamp  unlinked_at      = 5;
+}
+
+message ListLinkedAccountsResponse {
+  repeated LinkedAccount accounts = 1;
+}
+
+message UnlinkAccountRequest {
+  string               tenant_id      = 1;
+  Platform             platform       = 2;
+  string               platform_user_id = 3;
+}
+
+message UnlinkAccountResponse {
+  bool   unlinked = 1;
+  string message  = 2;
+}
+
+// ── Command Execution ────────────────────────────────────────────────────────────
+
+message ExecuteCommandRequest {
+  string               tenant_id   = 1;
+  string               user_id     = 2;
+  Platform             platform    = 3;
+  string               command     = 4;   // e.g. "rss add", "crawl start"
+  repeated string      args        = 5;
+  string               conversation_id = 6;
+}
+
+message ExecuteCommandResponse {
+  CommandResult        result     = 1;
+  string               output     = 2;
+  google.protobuf.Timestamp executed_at = 3;
+}
+
+// ── Health ──────────────────────────────────────────────────────────────────────
+
+message HealthCheckRequest {}
+
+message HealthCheckResponse {
+  bool   healthy   = 1;
+  string version   = 2;
+  string message   = 3;
+}
+
+// ── Service ────────────────────────────────────────────────────────────────────
+
+service BotService {
+  // Conversation management
+  rpc ListConversations(ListConversationsRequest) returns (ListConversationsResponse);
+  rpc GetConversation(GetConversationRequest) returns (GetConversationResponse);
+
+  // Send a message to a platform conversation
+  rpc SendMessage(SendMessageRequest) returns (SendMessageResponse);
+
+  // Multi-step wizard (RSS add flow, etc.)
+  rpc GetWizardState(GetWizardStateRequest) returns (WizardState);
+  rpc AdvanceWizard(AdvanceWizardRequest) returns (AdvanceWizardResponse);
+  rpc CancelWizard(CancelWizardRequest) returns (CancelWizardResponse);
+
+  // Workflow engine
+  rpc ListWorkflows(ListWorkflowsRequest) returns (ListWorkflowsResponse);
+  rpc GetWorkflow(GetWorkflowRequest) returns (GetWorkflowResponse);
+  rpc StartWorkflow(StartWorkflowRequest) returns (StartWorkflowResponse);
+  rpc CancelWorkflow(CancelWorkflowRequest) returns (CancelWorkflowResponse);
+
+  // Account linking
+  rpc CreateLinkCode(CreateLinkCodeRequest) returns (CreateLinkCodeResponse);
+  rpc VerifyLinkCode(VerifyLinkCodeRequest) returns (VerifyLinkCodeResponse);
+  rpc ListLinkedAccounts(ListLinkedAccountsRequest) returns (ListLinkedAccountsResponse);
+  rpc UnlinkAccount(UnlinkAccountRequest) returns (UnlinkAccountResponse);
+
+  // Command execution (bot commands: rss add, crawl start, etc.)
+  rpc ExecuteCommand(ExecuteCommandRequest) returns (ExecuteCommandResponse);
+
+  // Health check
+  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+}

@@ -16,11 +16,11 @@ import (
 
 // EventEnvelope wraps every event published through the bus.
 type EventEnvelope struct {
-	EventType    string          `json:"event_type"`
+	EventType     string          `json:"event_type"`
 	SourceService string          `json:"source_service"`
-	Payload      json.RawMessage `json:"payload"`
-	Timestamp    time.Time       `json:"timestamp"`
-	TraceID      string          `json:"trace_id,omitempty"`
+	Payload       json.RawMessage `json:"payload"`
+	Timestamp     time.Time       `json:"timestamp"`
+	TraceID       string          `json:"trace_id,omitempty"`
 }
 
 // EventHandler is the function signature for event subscribers.
@@ -31,7 +31,7 @@ type localSubscription struct {
 	handler  EventHandler
 	filter   string // event type filter
 	cancel   context.CancelFunc
-	cancelID int    // unique ID to distinguish cancel functions
+	cancelID int // unique ID to distinguish cancel functions
 }
 
 // EventBus provides both in-process (local) and Redis-backed (cross-service) pub/sub.
@@ -84,10 +84,10 @@ func (b *EventBus) Publish(ctx context.Context, eventType string, payload interf
 	}
 
 	envelope := EventEnvelope{
-		EventType:    eventType,
+		EventType:     eventType,
 		SourceService: b.serviceName,
-		Payload:      payloadBytes,
-		Timestamp:    time.Now().UTC(),
+		Payload:       payloadBytes,
+		Timestamp:     time.Now().UTC(),
 	}
 
 	// Propagate local subscribers synchronously.
@@ -116,10 +116,10 @@ func (b *EventBus) PublishLocal(ctx context.Context, eventType string, payload i
 	}
 
 	envelope := EventEnvelope{
-		EventType:    eventType,
+		EventType:     eventType,
 		SourceService: b.serviceName,
-		Payload:      payloadBytes,
-		Timestamp:    time.Now().UTC(),
+		Payload:       payloadBytes,
+		Timestamp:     time.Now().UTC(),
 	}
 
 	b.publishLocal(ctx, envelope)
@@ -213,6 +213,9 @@ func (b *EventBus) Subscribe(ctx context.Context, eventType string, handler Even
 					b.log.Error().Err(err).Str("payload", msg.Payload).Msg("unmarshal envelope")
 					continue
 				}
+				if envelope.SourceService == b.serviceName {
+					continue
+				}
 
 				subCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 				defer cancel()
@@ -265,7 +268,8 @@ func UnmarshalPayload(envelope EventEnvelope, out interface{}) error {
 
 // SubscribeByReflection dynamically calls a method on a receiver that matches
 // the event type name (e.g., HandleBotMessage for "bot.message").
-// This is an optional convenience for event-driven service patterns.
+// This is an optional convenience for event-driven service patterns and should
+// not be used on hot paths because it relies on reflection and per-message allocation.
 func (b *EventBus) SubscribeByReflection(receiver interface{}, opts ...BusOption) error {
 	val := reflect.ValueOf(receiver)
 	if val.Kind() != reflect.Ptr {

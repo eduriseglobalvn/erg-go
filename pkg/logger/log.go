@@ -28,10 +28,10 @@ const (
 
 // Logger wraps zerolog.Logger with service-name awareness and context helpers.
 type Logger struct {
-	zl         zerolog.Logger
-	service    string
-	output     io.Writer
-	mu         sync.RWMutex
+	zl      zerolog.Logger
+	service string
+	output  io.Writer
+	mu      sync.RWMutex
 }
 
 // Option configures a Logger.
@@ -41,7 +41,16 @@ type Option func(*Logger)
 func WithServiceName(name string) Option {
 	return func(l *Logger) {
 		l.service = name
-		l.zl = l.zl.With().Str("service", name).Logger()
+		l.mu.RLock()
+		out := l.output
+		l.mu.RUnlock()
+		l.zl = zerolog.New(out).
+			Level(zerolog.InfoLevel).
+			With().
+			Timestamp().
+			Caller().
+			Str("service", name).
+			Logger()
 	}
 }
 
@@ -69,7 +78,7 @@ func WithLevel(level string) Option {
 // WithTimeFormat sets the time format for log timestamps.
 func WithTimeFormat(format string) Option {
 	return func(l *Logger) {
-		switch strings.ToLower(format) {
+		switch format {
 		case "unix":
 			zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
 		case "unixms":
@@ -80,10 +89,18 @@ func WithTimeFormat(format string) Option {
 	}
 }
 
-// WithJSONFormat forces JSON output (production).
+// WithJSONFormat forces console writer output (production).
+// Preserves any custom output writer set via WithOutput.
 func WithJSONFormat() Option {
 	return func(l *Logger) {
-		l.zl = l.zl.Output(zerolog.ConsoleWriter{Out: os.Stdout})
+		var w io.Writer = os.Stdout
+		l.mu.Lock()
+		if l.output != nil {
+			w = l.output
+		}
+		l.output = w
+		l.mu.Unlock()
+		l.zl = l.zl.Output(zerolog.ConsoleWriter{Out: w})
 	}
 }
 
@@ -92,7 +109,7 @@ func WithJSONFormat() Option {
 func New(opts ...Option) *Logger {
 	l := &Logger{
 		service: "erg-service",
-		output: os.Stdout,
+		output:  os.Stdout,
 	}
 	zerolog.TimeFieldFormat = time.RFC3339
 	zerolog.CallerMarshalFunc = func(pc uintptr, file string, line int) string {
@@ -269,6 +286,11 @@ func ToContext(ctx context.Context, l *Logger) context.Context {
 // NewContext is a shorthand for ToContext.
 func NewContext(parent context.Context, l *Logger) context.Context {
 	return ToContext(parent, l)
+}
+
+// Zerolog returns the underlying zerolog.Logger for use in adapters/wrappers.
+func (l *Logger) Zerolog() *zerolog.Logger {
+	return &l.zl
 }
 
 // Sync flushes any buffered log entries (primarily for file-based outputs).

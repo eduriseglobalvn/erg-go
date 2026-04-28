@@ -3,8 +3,10 @@ package queue
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"time"
 
 	"github.com/hibiken/asynq"
@@ -54,11 +56,7 @@ func NewAsynqClient(cfg config.QueueConfig, opts ...ClientOption) (*AsynqClient,
 		o(c)
 	}
 
-	client := asynq.NewClient(asynq.RedisClientOpt{
-		Addr:     fmt.Sprintf("%s:%d", cfg.RedisHost, cfg.RedisPort),
-		Password: cfg.RedisPassword,
-		DB:       cfg.RedisDB,
-	})
+	client := asynq.NewClient(redisClientOpt(cfg))
 	c.client = client
 
 	return c, nil
@@ -116,6 +114,11 @@ func (c *AsynqClient) Close() error {
 	return c.client.Close()
 }
 
+// Config returns the client configuration. Useful for tenant-scoped wrappers.
+func (c *AsynqClient) Config() config.QueueConfig {
+	return c.cfg
+}
+
 // AsynqServer wraps the Asynq server for processing jobs with registered handlers.
 type AsynqServer struct {
 	server     *asynq.Server
@@ -142,11 +145,7 @@ func NewAsynqServer(cfg config.QueueConfig, opts ...ServerOption) (*AsynqServer,
 	}
 
 	server := asynq.NewServer(
-		asynq.RedisClientOpt{
-			Addr:     fmt.Sprintf("%s:%d", cfg.RedisHost, cfg.RedisPort),
-			Password: cfg.RedisPassword,
-			DB:       cfg.RedisDB,
-		},
+		redisClientOpt(cfg),
 		asynq.Config{
 			Concurrency: cfg.Concurrency,
 			Queues: map[string]int{
@@ -157,7 +156,7 @@ func NewAsynqServer(cfg config.QueueConfig, opts ...ServerOption) (*AsynqServer,
 			},
 			RetryDelayFunc: func(n int, e error, t *asynq.Task) time.Duration {
 				if cfg.RetryBackoff {
-					return time.Duration(n*n) * cfg.RetryDelay
+					return retryDelayWithJitter(cfg.RetryDelay, n, t)
 				}
 				return cfg.RetryDelay
 			},
@@ -170,6 +169,22 @@ func NewAsynqServer(cfg config.QueueConfig, opts ...ServerOption) (*AsynqServer,
 	s.server = server
 
 	return s, nil
+}
+
+func redisClientOpt(cfg config.QueueConfig) asynq.RedisClientOpt {
+	opt := asynq.RedisClientOpt{
+		Addr:     fmt.Sprintf("%s:%d", cfg.RedisHost, cfg.RedisPort),
+		Username: cfg.RedisUsername,
+		Password: cfg.RedisPassword,
+		DB:       cfg.RedisDB,
+	}
+	if cfg.RedisTLS {
+		opt.TLSConfig = &tls.Config{
+			MinVersion: tls.VersionTLS12,
+			ServerName: cfg.RedisHost,
+		}
+	}
+	return opt
 }
 
 // Start starts the server with the given handler map and blocks until ctx is cancelled.
@@ -240,10 +255,38 @@ func (h *funcErrorHandler) HandleError(ctx context.Context, task *asynq.Task, er
 	h.fn(ctx, task, err)
 }
 
-// ParsePayload parses the JSON payload of a task into the given struct.
-func ParsePayload(t *asynq.Task, out interface{}) error {
-	if err := json.Unmarshal(t.Payload(), out); err != nil {
+// ParsePayload parses raw JSON bytes into the given struct.
+func ParsePayload(data []byte, out interface{}) error {
+	if err := json.Unmarshal(data, out); err != nil {
 		return fmt.Errorf("queue: parse payload: %w", err)
 	}
 	return nil
+}
+
+func retryDelayWithJitter(base time.Duration, retry int, task *asynq.Task) time.Duration {
+	if base <= 0 {
+		base = time.Second
+	}
+	if retry < 1 {
+		retry = 1
+	}
+
+	delay := time.Duration(retry*retry) * base
+	jitterLimit := delay / 2
+	if jitterLimit <= 0 {
+		return delay
+	}
+	return delay + stableTaskJitter(task, jitterLimit)
+}
+
+func stableTaskJitter(task *asynq.Task, max time.Duration) time.Duration {
+	if max <= 0 {
+		return 0
+	}
+	h := fnv.New64a()
+	if task != nil {
+		_, _ = h.Write([]byte(task.Type()))
+		_, _ = h.Write(task.Payload())
+	}
+	return time.Duration(h.Sum64() % uint64(max))
 }

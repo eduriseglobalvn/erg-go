@@ -1,0 +1,55 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "Renovate config for erg-go — auto-update erg.ninja/* dependencies",
+  "extends": [
+    "config:recommended"
+  ],
+
+  "labels": ["dependencies", "renovate"],
+
+  "packageRules": [
+    {
+      "description": "Auto-merge erg.ninja/* module updates (Go consumers)",
+      "matchDatasources": ["go-module"],
+      "matchPackagePrefixes": ["erg.ninja/"],
+      "automerge": true,
+      "automergeType": "pr",
+      "automergeStrategy": "bump",
+      "groupName": "erg.ninja modules"
+    },
+    {
+      "description": "Patch updates — auto-merge without review",
+      "matchUpdateTypes": ["patch"],
+      "automerge": true,
+      "automergeType": "pr"
+    },
+    {
+      "description": "Minor updates — create PR, auto-merge after CI",
+      "matchUpdateTypes": ["minor"],
+      "automerge": false,
+      "labels": ["dependencies"]
+    },
+    {
+      "description": "Major updates — require manual review",
+      "matchUpdateTypes": ["major"],
+      "automerge": false,
+      "labels": ["dependencies", "breaking"],
+      "requireConvergeCheck": true
+    }
+  ],
+
+  "vulnerabilityAlerts": {
+    "labels": ["security", "dependencies"],
+    "automerge": false
+  },
+
+  "gitLabAutomerge": false,
+  "platformAutomerge": true,
+
+  "prConcurrentLimit": 5,
+  "prHourlyLimit": 10,
+
+  "semanticCommits": true,
+  "semanticCommitType": "chore",
+  "semanticCommitScope": "deps"
+}

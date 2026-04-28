@@ -5,31 +5,34 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hibiken/asynq"
+
 	"erg.ninja/pkg/config"
 )
 
 func TestQueueNames(t *testing.T) {
-	if queueNames[PriorityCritical] != PriorityCritical {
-		t.Error("PriorityCritical mapping incorrect")
+	// Priority constants double as queue names.
+	if PriorityCritical != "critical" {
+		t.Error("PriorityCritical should be 'critical'")
 	}
-	if queueNames[PriorityHigh] != PriorityHigh {
-		t.Error("PriorityHigh mapping incorrect")
+	if PriorityHigh != "high" {
+		t.Error("PriorityHigh should be 'high'")
 	}
-	if queueNames[PriorityDefault] != PriorityDefault {
-		t.Error("PriorityDefault mapping incorrect")
+	if PriorityDefault != "default" {
+		t.Error("PriorityDefault should be 'default'")
 	}
-	if queueNames[PriorityLow] != PriorityLow {
-		t.Error("PriorityLow mapping incorrect")
+	if PriorityLow != "low" {
+		t.Error("PriorityLow should be 'low'")
 	}
 }
 
 func TestNewAsynqClient(t *testing.T) {
 	cfg := config.QueueConfig{
-		RedisHost:    "localhost",
-		RedisPort:    6379,
+		RedisHost:     "localhost",
+		RedisPort:     6379,
 		RedisPassword: "",
-		RedisDB:      0,
-		MaxRetry:    3,
+		RedisDB:       0,
+		MaxRetry:      3,
 	}
 	// NewAsynqClient connects to Redis; skip live test in unit test.
 	// Just verify it doesn't panic and returns a non-nil client.
@@ -74,11 +77,8 @@ func TestParsePayload(t *testing.T) {
 		Key string `json:"key"`
 	}
 
-	// Simulate an asynq.Task payload.
-	task := &mockTask{payload: bytes}
-
 	var out SamplePayload
-	if err := ParsePayload(task, &out); err != nil {
+	if err := ParsePayload(bytes, &out); err != nil {
 		t.Fatalf("ParsePayload: %v", err)
 	}
 	if out.Key != "value" {
@@ -87,9 +87,9 @@ func TestParsePayload(t *testing.T) {
 }
 
 func TestParsePayloadInvalid(t *testing.T) {
-	task := &mockTask{payload: []byte("not json{{{")}
+	invalid := []byte("not json{{{")
 	var out map[string]interface{}
-	if err := ParsePayload(task, &out); err == nil {
+	if err := ParsePayload(invalid, &out); err == nil {
 		t.Error("ParsePayload should error on invalid JSON")
 	}
 }
@@ -110,20 +110,37 @@ func TestAsynqServerConfig(t *testing.T) {
 	}
 }
 
+func TestRetryDelayWithJitter(t *testing.T) {
+	task := asynq.NewTask("crawler:test", []byte(`{"id":"1"}`))
+	base := 10 * time.Second
+
+	got := retryDelayWithJitter(base, 3, task)
+	min := 9 * base
+	max := min + (min / 2)
+	if got < min || got >= max {
+		t.Fatalf("retryDelayWithJitter=%v, want in [%v, %v)", got, min, max)
+	}
+
+	got2 := retryDelayWithJitter(base, 3, task)
+	if got != got2 {
+		t.Fatalf("retryDelayWithJitter should be stable for same task, got %v and %v", got, got2)
+	}
+}
+
 // mockTask implements asynq.Task (as of asynq v0.24.1).
 type mockTask struct {
 	payload []byte
 }
 
-func (m *mockTask) Payload() []byte              { return m.payload }
-func (m *mockTask) Type() string                { return "test" }
-func (m *mockTask) Queue() string               { return "default" }
-func (m *mockTask) RetryCount() int             { return 0 }
-func (m *mockTask) Error() string               { return "" }
-func (m *mockTask) LastFailedAt() time.Time     { return time.Time{} }
-func (m *mockTask) Result() []byte              { return nil }
-func (m *mockTask) MaxRetry() int              { return 3 }
-func (m *mockTask) Timeout() time.Duration      { return 0 }
-func (m *mockTask) Deadline() *time.Time        { return nil }
-func (m *mockTask) RetryDelay() time.Duration   { return 0 }
-func (m *mockTask) Unique() time.Duration       { return 0 }
+func (m *mockTask) Payload() []byte           { return m.payload }
+func (m *mockTask) Type() string              { return "test" }
+func (m *mockTask) Queue() string             { return "default" }
+func (m *mockTask) RetryCount() int           { return 0 }
+func (m *mockTask) Error() string             { return "" }
+func (m *mockTask) LastFailedAt() time.Time   { return time.Time{} }
+func (m *mockTask) Result() []byte            { return nil }
+func (m *mockTask) MaxRetry() int             { return 3 }
+func (m *mockTask) Timeout() time.Duration    { return 0 }
+func (m *mockTask) Deadline() *time.Time      { return nil }
+func (m *mockTask) RetryDelay() time.Duration { return 0 }
+func (m *mockTask) Unique() time.Duration     { return 0 }

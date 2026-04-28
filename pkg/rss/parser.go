@@ -18,42 +18,42 @@ import (
 type FeedType string
 
 const (
-	FeedRSS    FeedType = "rss"
-	FeedAtom   FeedType = "atom"
-	FeedJSON   FeedType = "json"
+	FeedRSS     FeedType = "rss"
+	FeedAtom    FeedType = "atom"
+	FeedJSON    FeedType = "json"
 	FeedUnknown FeedType = "unknown"
 )
 
 // FeedItem represents a single item/entry from any feed type.
 type FeedItem struct {
-	Title       string
-	Link        string
-	Description string
-	Content     string    // full content (may be HTML or plain text)
-	PubDate     time.Time
-	Author      string
-	Categories  []string
-	GUID        string    // unique identifier
-	ImageURL    string
-	EnclosureURL string
+	Title         string
+	Link          string
+	Description   string
+	Content       string // full content (may be HTML or plain text)
+	PubDate       time.Time
+	Author        string
+	Categories    []string
+	GUID          string // unique identifier
+	ImageURL      string
+	EnclosureURL  string
 	EnclosureType string
-	Source      string    // feed source URL
+	Source        string // feed source URL
 }
 
 // Feed represents a parsed feed with metadata.
 type Feed struct {
-	Type        FeedType
-	Title       string
-	Description string
-	Link        string
-	Items       []FeedItem
-	UpdatedAt   time.Time
-	Language    string
-	Generator   string
-	ImageURL    string
-	ETag        string
+	Type         FeedType
+	Title        string
+	Description  string
+	Link         string
+	Items        []FeedItem
+	UpdatedAt    time.Time
+	Language     string
+	Generator    string
+	ImageURL     string
+	ETag         string
 	LastModified string
-	Source      string // original feed URL
+	Source       string // original feed URL
 }
 
 // Parser extracts structured items from RSS, Atom, and JSON feeds.
@@ -255,9 +255,9 @@ func (p *Parser) parseAtom(data []byte, feed *Feed) error {
 
 	for _, entry := range atomFeed.Entries {
 		fi := FeedItem{
-			Title:   entry.Title,
-			GUID:     entry.ID,
-			Source:  feed.Source,
+			Title:  entry.Title,
+			GUID:   entry.ID,
+			Source: feed.Source,
 		}
 		if len(entry.Links) > 0 {
 			for _, link := range entry.Links {
@@ -369,13 +369,13 @@ func (a atomTime) IsZero() bool {
 
 // atomFeedXML represents an Atom 1.0 feed.
 type atomFeedXML struct {
-	XMLName   xml.Name      `xml:"feed"`
-	Title     string        `xml:"title"`
-	Subtitle  string        `xml:"subtitle"`
-	Links     []atomLinkXML `xml:"link"`
-	Updated   atomTime      `xml:"updated"`
-	Generator string        `xml:"generator"`
-	Lang      string        `xml:"lang"`
+	XMLName   xml.Name       `xml:"feed"`
+	Title     string         `xml:"title"`
+	Subtitle  string         `xml:"subtitle"`
+	Links     []atomLinkXML  `xml:"link"`
+	Updated   atomTime       `xml:"updated"`
+	Generator string         `xml:"generator"`
+	Lang      string         `xml:"lang"`
 	Entries   []atomEntryXML `xml:"entry"`
 }
 
@@ -388,15 +388,15 @@ type atomLinkXML struct {
 
 // atomEntryXML represents an Atom 1.0 entry.
 type atomEntryXML struct {
-	Title      string              `xml:"title"`
-	ID         string              `xml:"id"`
-	Links      []atomLinkXML       `xml:"link"`
-	Updated    atomTime            `xml:"updated"`
-	Published  atomTime            `xml:"published"`
-	Summary    string              `xml:"summary"`
-	Content    []atomContentXML    `xml:"content"`
-	Authors    []atomAuthorXML     `xml:"author"`
-	Categories []atomCategoryXML   `xml:"category"`
+	Title      string            `xml:"title"`
+	ID         string            `xml:"id"`
+	Links      []atomLinkXML     `xml:"link"`
+	Updated    atomTime          `xml:"updated"`
+	Published  atomTime          `xml:"published"`
+	Summary    string            `xml:"summary"`
+	Content    []atomContentXML  `xml:"content"`
+	Authors    []atomAuthorXML   `xml:"author"`
+	Categories []atomCategoryXML `xml:"category"`
 }
 
 // atomContentXML represents the content element in Atom.
@@ -419,19 +419,19 @@ type atomCategoryXML struct {
 // ---- XML Structures ----
 
 type rssFeed struct {
-	XMLName xml.Name    `xml:"rss"`
+	XMLName xml.Name   `xml:"rss"`
 	Channel rssChannel `xml:"channel"`
 }
 
 type rssChannel struct {
-	Title         string     `xml:"title"`
-	Description   string     `xml:"description"`
-	Link          string     `xml:"link"`
-	Language      string     `xml:"language"`
-	Generator     string     `xml:"generator"`
-	LastBuildDate string     `xml:"lastBuildDate"`
-	Image         rssImage   `xml:"image"`
-	Items         []rssItem  `xml:"item"`
+	Title         string    `xml:"title"`
+	Description   string    `xml:"description"`
+	Link          string    `xml:"link"`
+	Language      string    `xml:"language"`
+	Generator     string    `xml:"generator"`
+	LastBuildDate string    `xml:"lastBuildDate"`
+	Image         rssImage  `xml:"image"`
+	Items         []rssItem `xml:"item"`
 }
 
 type rssImage struct {
@@ -463,14 +463,14 @@ type rssEnclosure struct {
 // ---- JSON Feed Structures ----
 
 type jsonFeed struct {
-	Version     string          `json:"version"`
-	Title       string          `json:"title"`
-	Description string          `json:"description"`
-	HomePageURL string          `json:"home_page_url"`
-	Icon        string          `json:"icon"`
-	Language    string          `json:"language"`
+	Version      string         `json:"version"`
+	Title        string         `json:"title"`
+	Description  string         `json:"description"`
+	HomePageURL  string         `json:"home_page_url"`
+	Icon         string         `json:"icon"`
+	Language     string         `json:"language"`
 	DateModified jsonTime       `json:"date_modified"`
-	Items       []jsonFeedItem  `json:"items"`
+	Items        []jsonFeedItem `json:"items"`
 }
 
 type jsonTime struct {
@@ -488,15 +488,15 @@ func (j *jsonTime) UnmarshalJSON(data []byte) error {
 }
 
 type jsonFeedItem struct {
-	ID            string          `json:"id"`
-	URL           string          `json:"url"`
-	Title        string          `json:"title"`
-	Summary       string          `json:"summary"`
-	ContentHtml  string          `json:"content_html"`
-	Author       jsonAuthor      `json:"author"`
-	DatePublished jsonTime       `json:"date_published"`
-	Tags         []string         `json:"tags"`
-	Attachments  []jsonAttachment `json:"attachments"`
+	ID            string           `json:"id"`
+	URL           string           `json:"url"`
+	Title         string           `json:"title"`
+	Summary       string           `json:"summary"`
+	ContentHtml   string           `json:"content_html"`
+	Author        jsonAuthor       `json:"author"`
+	DatePublished jsonTime         `json:"date_published"`
+	Tags          []string         `json:"tags"`
+	Attachments   []jsonAttachment `json:"attachments"`
 }
 
 type jsonAuthor struct {

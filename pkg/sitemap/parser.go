@@ -294,16 +294,53 @@ func (p *Parser) parseURLSet(data []byte, sm *Sitemap) error {
 }
 
 // parseSitemapIndex parses a sitemap index file.
+// Detects XML namespace usage and handles both forms:
+// Non-namespaced: <sitemapindex><sitemap><loc>URL</loc></sitemap></sitemapindex>
+// Namespaced:     <sitemapindex xmlns="..."><sitemap><loc>URL</loc></sitemap></sitemapindex>
 func (p *Parser) parseSitemapIndex(data []byte, sm *Sitemap) error {
-	var si sitemapIndexXML
-	if err := xml.Unmarshal(data, &si); err != nil {
-		return fmt.Errorf("sitemap: unmarshal sitemapindex: %w", err)
+	// Check if this is a namespaced XML document (has xmlns on root).
+	hasNS := strings.Contains(string(data), `xmlns=`)
+	isNamespaced := hasNS
+
+	if !isNamespaced {
+		// Simple case: parse directly with unmarshal.
+		var si sitemapIndexXML
+		if err := xml.Unmarshal(data, &si); err != nil {
+			return fmt.Errorf("sitemap: unmarshal sitemapindex: %w", err)
+		}
+		for _, s := range si.Sitemaps {
+			sm.Children = append(sm.Children, s.Loc)
+		}
+		return nil
 	}
 
-	for _, s := range si.Sitemaps {
-		sm.Children = append(sm.Children, s.Loc)
-	}
+	// Namespaced: extract <loc> values directly by finding them as text between tags.
+	// This avoids the namespace decoding issues with xml.Decoder.
+	return p.parseSitemapIndexNS(data, sm)
+}
 
+// parseSitemapIndexNS extracts <loc> values from namespaced sitemap index XML.
+func (p *Parser) parseSitemapIndexNS(data []byte, sm *Sitemap) error {
+	content := string(data)
+	// Find all <loc>...</loc> pairs at the sitemap level.
+	// Split by <sitemap> and extract loc from each.
+	parts := strings.Split(content, "<sitemap>")
+	for _, part := range parts[1:] { // skip first (before any <sitemap>)
+		// Find the <loc>...</loc> within this <sitemap> entry.
+		locStart := strings.Index(part, "<loc>")
+		if locStart < 0 {
+			continue
+		}
+		rest := part[locStart+5:] // skip "<loc>"
+		locEnd := strings.Index(rest, "</loc>")
+		if locEnd < 0 {
+			continue
+		}
+		loc := strings.TrimSpace(rest[:locEnd])
+		if loc != "" {
+			sm.Children = append(sm.Children, loc)
+		}
+	}
 	return nil
 }
 
@@ -394,23 +431,23 @@ func parseSitemapTime(s string) (time.Time, error) {
 // ---- XML Structures ----
 
 type urlSetXML struct {
-	XMLName xml.Name    `xml:"urlset"`
+	XMLName xml.Name      `xml:"urlset"`
 	URLs    []urlEntryXML `xml:"url"`
 }
 
 type urlEntryXML struct {
-	Loc        string `xml:"loc"`
-	LastMod    string `xml:"lastmod"`
-	ChangeFreq string `xml:"changefreq"`
+	Loc        string  `xml:"loc"`
+	LastMod    string  `xml:"lastmod"`
+	ChangeFreq string  `xml:"changefreq"`
 	Priority   float64 `xml:"priority"`
 }
 
 type sitemapIndexXML struct {
-	XMLName xml.Name          `xml:"sitemapindex"`
+	XMLName  xml.Name        `xml:"sitemapindex"`
 	Sitemaps []sitemapRefXML `xml:"sitemap"`
 }
 
 type sitemapRefXML struct {
-	Loc        string `xml:"loc"`
-	LastMod    string `xml:"lastmod"`
+	Loc     string `xml:"loc"`
+	LastMod string `xml:"lastmod"`
 }

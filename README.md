@@ -1,234 +1,275 @@
-# erg — Go Monorepo
+# erg-go — Shared Microservice Library for EduRise Global
 
-> High-performance Go microservices for the ERG platform: BOT, Notification, Crawler, and Trending services.
+> Transform erg-go from a single binary monolith → **config-driven, multi-tenant, service-discoverable shared library** consumable by multiple Go services and NestJS backends.
+
+**Build**: `go build ./...` | **gRPC**: 4 services (Crawler, Bot, Notification, Trending) | **Go**: 1.21+
+
+---
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                     Go Monorepo (erg.ninja)                  │
-│                                                              │
-│  cmd/                                                         │
-│  ├── bot-service/        ← Discord/Telegram command processor│
-│  ├── notification-service/ ← Multi-channel notifications     │
-│  ├── crawler-service/     ← Web scraping, RSS, Sitemap       │
-│  └── trending-service/    ← Google Trends, News API aggregator│
-│                                                              │
-│  pkg/ (shared infrastructure)                                │
-│  ├── config/     ← Viper YAML/env/flags config               │
-│  ├── database/   ← MongoDB (go.mongodb-driver v2)            │
-│  ├── cache/      ← Redis (go-redis/v9)                       │
-│  ├── queue/      ← Asynq background job processing           │
-│  ├── event/      ← In-process event bus + Redis pub/sub      │
-│  ├── logger/     ← zerolog structured logging                │
-│  ├── http/       ← chi router + middleware stack             │
-│  ├── auth/       ← JWT validation (HS256/RS256)              │
-│  ├── notification/ ← Notification interfaces                  │
-│  ├── scraper/    ← HTTP fetcher, robots.txt, HTML parser    │
-│  ├── dedup/      ← SimHash near-duplicate detection          │
-│  ├── ai/         ← Gemini AI client for CSS selectors         │
-│  ├── rss/        ← RSS/Atom/JSON Feed parser                 │
-│  ├── sitemap/    ← XML sitemap discovery + parsing            │
-│  └── telemetry/  ← OpenTelemetry + Prometheus metrics        │
-└─────────────────────────────────────────────────────────────┘
+│              Consumer Services                               │
+│  erg-backend (NestJS)  │  Future Go microservices  │  ...   │
+└──────────────────────────┬───────────────────────┬────────────┘
+                          │                       │
+               ┌──────────▼──────┐   ┌────────▼───────────┐
+               │ lib/crawler/v1 │   │ lib/bot/v1         │
+               │ lib/notification│   │ lib/trending/v1    │
+               │ (gRPC clients) │   │ (gRPC clients)     │
+               └──────────┬──────┘   └────────┬───────────┘
+                          │                       │
+         ┌─────────────────┴───────────────────┘
+         │            lib/ (v1 stable API surface)
+         └─────────────────────┬──────────────────────────┘
+                               │
+         ┌─────────────────────▼───────────────────────────┐
+         │   erg-server (standalone binary + lib/ consumers) │
+         │   cmd/server + lib/* + internal/* + pkg/*         │
+         │                                                   │
+         │  BOT  │  NOTIFICATIONS  │  CRAWLER  │  TRENDING │
+         │       │                │           │            │
+         │       └──────┬─────────┘           │            │
+         │              │   Event Bus          │            │
+         │    MongoDB │ Redis │ Asynq │ pkg/*  │            │
+         └──────────────────────────────────────────────┘
+                               │
+         ┌─────────────────────▼───────────────────────────┐
+         │     pkg/ (PUBLIC — importable by any service)    │
+         │                                                   │
+         │  tenant/     Multi-tenant context + isolation       │
+         │  discovery/  Consul / DNS / Static catalog         │
+         │  plugin/     Build tags + runtime .so loader       │
+         │  compose/    Service manifest + dependency resolver  │
+         │  errors/     40+ error codes, gRPC/HTTP mapping   │
+         │  config/     Viper YAML/env/flags                  │
+         │  database/   MongoDB + MySQL (pgx v5)              │
+         │  cache/      Redis GET/SET + Pub/Sub              │
+         │  queue/      Asynq client + server                 │
+         │  event/      In-process + Redis pub/sub           │
+         │  logger/     zerolog structured logging            │
+         │  http/       chi router + middleware + interceptors │
+         │  auth/       JWT validation                        │
+         │  scraper/    Fetcher + robots.txt parser          │
+         │  dedup/      SimHash deduplication                │
+         │  ai/         Gemini AI integration                │
+         │  rss/         RSS/Atom parser                    │
+         │  sitemap/     Sitemap parser                      │
+         │  telemetry/   OpenTelemetry + Prometheus           │
+         └─────────────────────────────────────────────────┘
 ```
+
+---
 
 ## Quick Start
 
 ```bash
-# Start local infrastructure
-make docker-up
+# Standalone server
+go build -o erg-server ./cmd/server
+./erg-server
 
-# Build all services
-make build
+# Library (use in other Go services)
+go build ./lib/...
 
-# Run all tests
-make test
+# Full build
+go build ./...
 
-# Lint
-make lint
-
-# Run a service locally
-make run/bot-service
+# Docker
+docker compose up -d
 ```
+
+---
+
+## Library Usage (gRPC Clients)
+
+```go
+package main
+
+import (
+    "context"
+    "erg.ninja/lib/crawler/v1"
+)
+
+func main() {
+    // Create gRPC client
+    client, err := crawlerv1.NewClient("localhost:8083",
+        crawlerv1.WithConnectTimeout(5*time.Second),
+    )
+    if err != nil {
+        panic(err)
+    }
+
+    // Call service
+    resp, err := client.CrawlURL(context.Background(), &crawlerv1.CrawlURLRequest{
+        Url:       "https://example.com",
+        TenantId:  "acme",
+        Priority:  crawlerv1.PRIORITY_NORMAL,
+    })
+    println("Job ID:", resp.JobId)
+}
+```
+
+---
 
 ## Services
 
-### bot-service (port 8081)
-Handles Discord and Telegram bot commands, conversation management, and workflow automation.
-
-**Key features:**
-- Command routing with prefix and slash command support
-- Conversation state machine with MongoDB persistence
-- Multi-platform support (Discord, Telegram)
-- Workflow trigger system
-- 30-day TTL on conversations for privacy
-
-### notification-service (port 8082)
-Multi-channel notification fan-out with retry, digest scheduling, and delivery tracking.
-
-**Key features:**
-- Discord, Telegram, WhatsApp, Email, Slack channels
-- Exponential backoff retry with dead-letter queue
-- Digest mode for batched notifications
-- Asynq-powered async processing
-- Per-channel rate limit enforcement
-
-### crawler-service (port 8083)
+### Crawler (port 8083)
 Web crawling with anti-blocking, SimHash deduplication, and AI-assisted content scoring.
 
 **Key features:**
-- RSS/Atom/JSON feed polling
-- XML sitemap discovery and recursive parsing
-- robots.txt compliance with crawl-delay
-- Proxy rotation and User-Agent cycling
+- RSS/Atom/JSON feed polling with SSE progress streaming
+- XML sitemap discovery + recursive parsing
+- robots.txt compliance with crawl-delay support
+- Proxy rotation + User-Agent cycling
 - SimHash near-duplicate detection (Hamming ≤ 6)
-- Gemini AI CSS selector suggestions
+- 8-rule quality gate (threshold ≥ 5/8)
 - Asynq worker pool for parallel crawling
+- Domain reputation tracking
 
-### trending-service (port 8084)
-Scheduled aggregation of trending topics from Google Trends, News API, and custom sources.
+**gRPC methods:** `CrawlURL`, `GetCrawlStatus`, `ListFeeds`, `RefreshFeed`, `GetStats`, `StopCrawl`, `GetCrawlHistory`, `Reindex`
+
+### Bot (port 8081)
+Handles Discord/Telegram webhooks, conversation management, and workflow automation.
 
 **Key features:**
-- Cron-based aggregation (every 30 minutes)
-- Regional trend filtering
+- Discord slash commands + HMAC-SHA256 webhook verification
+- Telegram webhooks + Ed25519 bot API verification
+- Multi-step wizard engine (RSS add, account linking)
+- Automation workflow engine (pause/resume/cancel)
+- RBAC 5-level permission system (owner > admin > moderator > trusted > user)
+- 6-character alphanumeric link codes (Redis TTL)
+
+**gRPC methods:** `ListConversations`, `SendMessage`, `GetWizardState`, `AdvanceWizard`, `ListWorkflows`, `StartWorkflow`, `CreateLinkCode`, `ExecuteCommand`, `HealthCheck`
+
+### Notification (port 8082)
+Multi-channel notification fan-out with retry, digest scheduling, and delivery tracking.
+
+**Key features:**
+- Discord, Telegram, WhatsApp, Email channels
+- Exponential backoff retry + dead-letter queue
+- Digest mode (daily/weekly/monthly batching)
+- 14 event topics from event bus
+- Per-user channel preferences
+- Per-channel rate limit enforcement
+
+**gRPC methods:** `Send`, `Get`, `List`, `Cancel`, `GetPreferences`, `UpdatePreferences`, `SendBulk`
+
+### Trending (port 8084)
+Scheduled aggregation of trending topics from crawled content + external sources.
+
+**Key features:**
+- Cron-based aggregation (every 15 minutes)
 - Time-windowed scoring (1h, 24h, 7d, 30d)
+- Redis-cached results
 - MongoDB compound indexes for fast top-k queries
+- Point-in-time snapshots for historical charts
+- Hot-topic alerts
+
+**gRPC methods:** `GetTopTopics`, `GetTopic`, `SearchTopics`, `GetTopicNews`, `GetSnapshot`, `Refresh`, `GetKeywordTrend`, `GetStats`
+
+---
 
 ## Shared Packages
 
-### `pkg/config`
-Viper-based configuration with YAML/env/flags support and secret injection.
+| Package | Description |
+|---------|-------------|
+| `pkg/tenant` | Tenant context propagation, middleware, MongoDB/Redis/Asynq isolation |
+| `pkg/discovery` | Service registry: Consul, DNS SRV, Static catalog |
+| `pkg/plugin` | Build tags + runtime `.so` module loader |
+| `pkg/compose` | Service manifest loader, topological dependency sort |
+| `pkg/errors` | 40+ structured error codes, gRPC ↔ HTTP mapper |
+| `pkg/config` | Viper YAML/env/flags, secret injection |
+| `pkg/database` | MongoDB (mongo-driver v2) + MySQL (pgx v5) |
+| `pkg/cache` | Redis GET/SET, distributed locks, Pub/Sub |
+| `pkg/queue` | Asynq client + server, priority queues, DLQ |
+| `pkg/event` | In-process + Redis pub/sub event bus |
+| `pkg/http` | chi router, middleware stack, interceptors |
+| `pkg/scraper` | HTTP fetcher, robots.txt, proxy rotation |
+| `pkg/dedup` | SimHash + SHA-256 content deduplication |
+| `pkg/ai` | Gemini AI client, dual-tier L1/L2 cache |
+| `pkg/rss` | RSS 2.0 / Atom 1.0 / JSON Feed parser |
+| `pkg/sitemap` | XML sitemap discovery + recursive parsing |
+| `pkg/telemetry` | OpenTelemetry tracing + Prometheus metrics |
+| `pkg/auth` | JWT validation (HS256/RS256) |
+| `pkg/logger` | zerolog structured logging |
+| `pkg/monitoring` | Component health checks |
 
-```go
-cfg := config.NewDefault()
-loader := config.NewLoader(config.WithConfigPaths("."))
-if err := loader.Load(cfg); err != nil { ... }
-```
-
-### `pkg/database`
-MongoDB via mongo-go-driver v2 with connection pooling, retry, and health checks.
-
-```go
-mongo, err := database.NewMongoClient(ctx, cfg.MongoDB)
-```
-
-### `pkg/cache`
-Redis client with GET/SET, Pub/Sub, and distributed locking.
-
-```go
-lock, err := redis.AcquireLock(ctx, "my-lock", 30*time.Second)
-```
-
-### `pkg/queue`
-Asynq client/server for background jobs with priority queues and DLQ.
-
-```go
-client.Enqueue(ctx, "crawl:page", payload, queue.WithQueue("high"))
-```
-
-### `pkg/event`
-In-process event bus + Redis pub/sub for cross-service events.
-
-```go
-bus.Publish(ctx, "user.created", eventPayload)
-// Cross-service via Redis:
-bus := event.NewEventBus("bot-service", event.WithRedisBackend(redis))
-```
-
-### `pkg/http`
-chi router with standard middleware: Recovery → RequestID → RealIP → Logger → CORS → RateLimit.
-
-```go
-server := http.NewServer(cfg.HTTP, log)
-server.MountHealthRoutes()
-server.Get("/api/v1/items", handler)
-```
-
-### `pkg/scraper`
-Production web fetcher with robots.txt, proxy rotation, UA cycling, and adaptive delays.
-
-```go
-fetcher := scraper.NewFetcher(cfg.Scraper)
-result := fetcher.Fetch(ctx, "https://example.com")
-```
-
-### `pkg/dedup`
-SimHash FNV-1a + SHA-256 deduplication with Hamming distance comparison.
-
-```go
-deduper := dedup.NewDeduper(store)
-isDup, reason, _ := deduper.IsDuplicate(ctx, "article content")
-```
+---
 
 ## Configuration
 
-All configuration is via `config.yaml` or environment variables (with `__` separator):
-
 ```yaml
 app:
-  name: bot-service
+  env: production
+  host: "0.0.0.0"
   port: 8080
-  env: development
 
 mongodb:
   uri: mongodb://localhost:27017
-  database: erg
+  database: erg_server
 
 redis:
   host: localhost
   port: 6379
 
-scraper:
-  min_delay: 3s
-  respect_robots_txt: true
-  user_agents:
-    - "Mozilla/5.0 ..."
-
 queue:
-  concurrency: 10
-  redis_host: localhost
+  concurrency: 20
+  retry_backoff: true
+
+# Multi-tenant
+tenants:
+  default: shared_defaults
+  acme:
+    scraper.max_delay: 5s
+    queue.concurrency: 5
+  startup_rocket:
+    trending.min_hot_score: 90
+
+# Service discovery
+discovery:
+  enabled: true
+  backend: consul
+  consul:
+    addr: "consul.internal:8500"
 ```
 
-Environment variable override:
-```bash
-export MONGODB__DATABASE=production_db
-export REDIS__HOST=redis.prod.internal
-export SECRET_DATABASE__PASSWORD=super-secret
-```
+---
 
 ## Testing
 
 ```bash
-# All tests with race detector
-make test
-
-# Coverage report
-make test-cover
-
-# Specific package
-go test ./pkg/scraper/... -v
+go test ./... -v -race
+go test ./pkg/discovery/... -v
+go test ./pkg/tenant/... -v
 ```
+
+---
 
 ## Deployment
 
 ```bash
-# Build Docker images
-make docker-build
+# Docker Compose
+docker compose up -d
 
-# Deploy to staging
-make deploy
+# Build binary
+go build -o erg-server ./cmd/server
 
-# Start local stack
-make docker-up
+# Build with specific modules
+go build -tags "module_crawler,module_notification" -o erg-crawler-notif ./cmd/server
 ```
 
-## Migration Status
+---
 
-| Phase | Description | Status |
-|---|---|---|
-| Foundation | Shared packages, infrastructure | ✅ **Active** |
-| BOT Service | Discord/Telegram command processor | 🔄 Phase 2 |
-| Notification Service | Multi-channel notifications | 🔄 Phase 3 |
-| Crawler Service | Web scraping, RSS, dedup | 🔄 Phase 4 |
-| Trending Service | Google Trends aggregation | 🔄 Phase 5 |
+## Proto Generation
+
+```bash
+go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+
+for svc in crawler bot notification trending; do
+  protoc --go_out=. --go_opt=paths=source_relative \
+         --go-grpc_out=. --go-grpc_opt=paths=source_relative \
+         proto/lib/$svc/v1/$svc.proto
+done
+```

@@ -68,7 +68,7 @@ func WithTLSConfig(tlsCfg *tls.Config) ClientOption {
 	return func(c *Client) {
 		c.client.Transport = &http.Transport{
 			TLSClientConfig: tlsCfg,
-			Proxy: http.ProxyFromEnvironment,
+			Proxy:           http.ProxyFromEnvironment,
 			DialContext: (&net.Dialer{
 				Timeout:   30 * time.Second,
 				KeepAlive: 30 * time.Second,
@@ -85,11 +85,11 @@ func WithTLSConfig(tlsCfg *tls.Config) ClientOption {
 // 5s default timeout, 3 retries with exponential backoff, circuit breaker.
 func NewClient(opts ...ClientOption) *Client {
 	c := &Client{
-		log:     logger.NoOp(),
-		maxRetries: 3,
-		threshold:  5,
+		log:         logger.NoOp(),
+		maxRetries:  3,
+		threshold:   5,
 		openTimeout: 30 * time.Second,
-		retryCodes: []int{500, 502, 503, 504, 408, 429},
+		retryCodes:  []int{500, 502, 503, 504, 408, 429},
 		retryDelays: []time.Duration{
 			1 * time.Second,
 			2 * time.Second,

@@ -1,17 +1,19 @@
-// Package http provides chi router server setup, middleware, and an HTTP client
+// Package http provides gin router server setup, middleware, and an HTTP client
 // with retry, circuit breaker, and structured logging.
 package http
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/pprof"
+	"time"
 
-	"github.com/go-chi/chi/v5"
-	chiMiddleware "github.com/go-chi/chi/v5/middleware"
-	"github.com/go-chi/cors"
+	"github.com/gin-contrib/cors"
+	"github.com/gin-contrib/gzip"
+	"github.com/gin-gonic/gin"
+
+	"github.com/rs/zerolog"
 
 	"erg.ninja/pkg/cache"
 	"erg.ninja/pkg/config"
@@ -19,12 +21,13 @@ import (
 	"erg.ninja/pkg/logger"
 	"erg.ninja/pkg/telemetry"
 
-	mw "erg.ninja/pkg/http/middleware"
+	"erg.ninja/internal/middleware"
+	"erg.ninja/pkg/http/interceptors"
 )
 
-// Server wraps a chi.Router with lifecycle management and dependency injection.
+// Server wraps a gin.Engine with lifecycle management and dependency injection.
 type Server struct {
-	router   *chi.Mux
+	router   *gin.Engine
 	httpSrv  *http.Server
 	log      *logger.Logger
 	cfg      config.HTTPConfig
@@ -68,7 +71,7 @@ func NewServer(cfg config.HTTPConfig, log *logger.Logger, opts ...ServerOption) 
 		o(s)
 	}
 
-	s.router = chi.NewRouter()
+	s.router = gin.New()
 	s.applyMiddleware(cfg, log)
 
 	return s
@@ -76,132 +79,85 @@ func NewServer(cfg config.HTTPConfig, log *logger.Logger, opts ...ServerOption) 
 
 // applyMiddleware installs the standard middleware stack.
 func (s *Server) applyMiddleware(cfg config.HTTPConfig, log *logger.Logger) {
-	// Recovery — panic recovery with request ID.
-	s.router.Use(chiMiddleware.Recoverer)
+	// Recovery — panic recovery.
+	s.router.Use(gin.Recovery())
 
-	// Request ID — inject/generate X-Request-ID.
-	s.router.Use(mw.RequestIDMiddleware)
+	// Error interceptor — converts panics and plain errors to structured JSON.
+	s.router.Use(interceptors.GinErrorInterceptor(log.Zerolog()))
 
 	// Real IP — extract real client IP from X-Forwarded-For / X-Real-IP.
-	s.router.Use(mw.RealIPMiddleware)
+	s.router.Use(middleware.RealIP())
 
-	// Structured request logging via chi's built-in logger.
-	s.router.Use(chiMiddleware.Logger)
+	// Request ID — inject/generate X-Request-ID.
+	s.router.Use(middleware.RequestID())
+
+	// Structured request logging via zerolog.
+	s.router.Use(requestLogger(log.Zerolog()))
 
 	// CORS — Cross-Origin Resource Sharing.
-	corsOpts := cors.Options{
-		AllowedOrigins:   cfg.CORS.AllowedOrigins,
-		AllowedMethods:   cfg.CORS.AllowedMethods,
-		AllowedHeaders:   cfg.CORS.AllowedHeaders,
-		ExposedHeaders:   cfg.CORS.ExposedHeaders,
+	s.router.Use(cors.New(cors.Config{
+		AllowOrigins:     cfg.CORS.AllowedOrigins,
+		AllowMethods:     cfg.CORS.AllowedMethods,
+		AllowHeaders:     cfg.CORS.AllowedHeaders,
+		ExposeHeaders:    cfg.CORS.ExposedHeaders,
 		AllowCredentials: cfg.CORS.AllowCredentials,
-		MaxAge:           cfg.CORS.MaxAge,
-	}
-	s.router.Use(cors.Handler(corsOpts))
+		MaxAge:           time.Duration(cfg.CORS.MaxAge) * time.Second,
+	}))
 
 	// Rate limiting — in-memory token bucket per IP.
 	if cfg.RateLimit.Enabled {
-		s.router.Use(mw.RateLimitMiddleware(
-			mw.WithRateLimitRequests(cfg.RateLimit.RequestsPerMinute),
-			mw.WithRateLimitBurst(cfg.RateLimit.Burst),
-		))
+		s.router.Use(middleware.RateLimit(s.redis, middleware.RateLimitConfig{
+			RequestsPerMinute: cfg.RateLimit.RequestsPerMinute,
+			Burst:             cfg.RateLimit.Burst,
+		}))
 	}
 
 	// Compress responses (gzip).
-	s.router.Use(chiMiddleware.Compress(5))
+	s.router.Use(gzip.Gzip(gzip.BestCompression))
 }
 
-// Mount mounts a sub-router at the given path.
-func (s *Server) Mount(path string, handler http.Handler) {
-	s.router.Mount(path, handler)
+// MountFunc mounts a gin router handler function at the given path.
+// Use this to register sub-routers or grouped routes.
+func (s *Server) MountFunc(path string, fn func(r *gin.RouterGroup)) {
+	fn(s.router.Group(path))
 }
 
-// MountFunc mounts a chi router handler function at the given path.
-func (s *Server) MountFunc(path string, fn http.HandlerFunc) {
-	s.router.Mount(path, http.HandlerFunc(fn))
-}
 
-// Handle registers an HTTP handler.
-func (s *Server) Handle(pattern string, handler http.Handler) {
-	s.router.Handle(pattern, handler)
-}
 
-// HandleFunc registers an HTTP handler function.
-func (s *Server) HandleFunc(pattern string, fn http.HandlerFunc) {
-	s.router.HandleFunc(pattern, fn)
-}
-
-// Method registers a handler for an HTTP method at a path.
-func (s *Server) Method(method, pattern string, handler http.Handler) {
-	s.router.Method(method, pattern, handler)
-}
-
-// MethodFunc registers a handler function for an HTTP method at a path.
-func (s *Server) MethodFunc(method, pattern string, fn http.HandlerFunc) {
-	s.router.MethodFunc(method, pattern, fn)
-}
-
-// Get registers a GET handler.
-func (s *Server) Get(pattern string, fn http.HandlerFunc) {
-	s.router.Get(pattern, fn)
-}
-
-// Post registers a POST handler.
-func (s *Server) Post(pattern string, fn http.HandlerFunc) {
-	s.router.Post(pattern, fn)
-}
-
-// Put registers a PUT handler.
-func (s *Server) Put(pattern string, fn http.HandlerFunc) {
-	s.router.Put(pattern, fn)
-}
-
-// Delete registers a DELETE handler.
-func (s *Server) Delete(pattern string, fn http.HandlerFunc) {
-	s.router.Delete(pattern, fn)
-}
-
-// Patch registers a PATCH handler.
-func (s *Server) Patch(pattern string, fn http.HandlerFunc) {
-	s.router.Patch(pattern, fn)
-}
-
-// MountHealthRoutes attaches /healthz and /ready endpoints.
+// MountHealthRoutes attaches /healthz and /ready endpoints using Gin-native handlers.
 func (s *Server) MountHealthRoutes() {
-	s.router.Get("/healthz", s.handleHealthz)
-	s.router.Get("/ready", s.handleReady)
+	s.router.GET("/healthz", s.handleHealthz)
+	s.router.GET("/ready", s.handleReady)
 }
 
 // MountDebugRoutes attaches pprof routes in development mode.
 func (s *Server) MountDebugRoutes() {
-	s.router.HandleFunc("/debug/pprof/", pprof.Index)
-	s.router.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
-	s.router.HandleFunc("/debug/pprof/profile", pprof.Profile)
-	s.router.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
-	s.router.HandleFunc("/debug/pprof/trace", pprof.Trace)
-	s.router.HandleFunc("/debug/pprof/allocs", pprof.Handler("allocs").ServeHTTP)
-	s.router.HandleFunc("/debug/pprof/heap", pprof.Handler("heap").ServeHTTP)
-	s.router.HandleFunc("/debug/pprof/block", pprof.Handler("block").ServeHTTP)
-	s.router.HandleFunc("/debug/pprof/mutex", pprof.Handler("mutex").ServeHTTP)
+	s.router.Any("/debug/pprof/", gin.WrapF(pprof.Index))
+	s.router.Any("/debug/pprof/cmdline", gin.WrapF(pprof.Cmdline))
+	s.router.Any("/debug/pprof/profile", gin.WrapF(pprof.Profile))
+	s.router.Any("/debug/pprof/symbol", gin.WrapF(pprof.Symbol))
+	s.router.Any("/debug/pprof/trace", gin.WrapF(pprof.Trace))
+	s.router.Any("/debug/pprof/allocs", gin.WrapH(pprof.Handler("allocs")))
+	s.router.Any("/debug/pprof/heap", gin.WrapH(pprof.Handler("heap")))
+	s.router.Any("/debug/pprof/block", gin.WrapH(pprof.Handler("block")))
+	s.router.Any("/debug/pprof/mutex", gin.WrapH(pprof.Handler("mutex")))
 }
 
 // MountMetrics attaches the Prometheus metrics endpoint.
 func (s *Server) MountMetrics() {
 	if s.registry != nil {
-		s.router.Handle("/metrics", s.registry.Handler())
+		s.router.GET("/metrics", gin.WrapH(s.registry.Handler()))
 	}
 }
 
 // handleHealthz is a liveness probe: returns 200 if the server is running.
-func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(`{"status":"ok"}`))
+func (s *Server) handleHealthz(ctx *gin.Context) {
+	ctx.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
 // handleReady checks all dependencies: MongoDB ping + Redis ping.
-func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
+func (s *Server) handleReady(ctx *gin.Context) {
+	reqCtx := ctx.Request.Context()
 	type dependency struct {
 		Name   string `json:"name"`
 		Status string `json:"status"`
@@ -212,7 +168,7 @@ func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 
 	// Check MongoDB.
 	if s.mongo != nil {
-		if err := s.mongo.Ping(ctx); err != nil {
+		if err := s.mongo.Ping(reqCtx); err != nil {
 			deps = append(deps, dependency{Name: "mongodb", Status: "down", Error: err.Error()})
 		} else {
 			deps = append(deps, dependency{Name: "mongodb", Status: "up"})
@@ -221,7 +177,7 @@ func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 
 	// Check Redis.
 	if s.redis != nil {
-		if err := s.redis.Ping(ctx); err != nil {
+		if err := s.redis.Ping(reqCtx); err != nil {
 			deps = append(deps, dependency{Name: "redis", Status: "down", Error: err.Error()})
 		} else {
 			deps = append(deps, dependency{Name: "redis", Status: "up"})
@@ -239,11 +195,10 @@ func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(httpStatus)
-
-	resp := map[string]interface{}{"status": status, "dependencies": deps}
-	_ = writeJSON(w, resp)
+	ctx.JSON(httpStatus, gin.H{
+		"status":       status,
+		"dependencies": deps,
+	})
 }
 
 // ServeHTTP makes the Server implement http.Handler.
@@ -251,8 +206,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.router.ServeHTTP(w, r)
 }
 
-// Router returns the underlying chi router.
-func (s *Server) Router() *chi.Mux {
+// Router returns the underlying gin engine.
+func (s *Server) Router() *gin.Engine {
 	return s.router
 }
 
@@ -299,9 +254,24 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	return s.httpSrv.Shutdown(ctx)
 }
 
-// writeJSON writes a JSON response with consistent formatting.
-func writeJSON(w http.ResponseWriter, v interface{}) error {
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-	return enc.Encode(v)
+
+
+// requestLogger is a zerolog-based request logger compatible with Gin.
+func requestLogger(log *zerolog.Logger) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// Log after request is processed.
+		c.Next()
+
+		requestID := c.GetHeader("X-Request-ID")
+		if requestID == "" {
+			requestID = "unknown"
+		}
+		log.Info().
+			Str("request_id", requestID).
+			Str("method", c.Request.Method).
+			Str("path", c.Request.URL.Path).
+			Int("status", c.Writer.Status()).
+			Str("client_ip", c.ClientIP()).
+			Msg("http request")
+	}
 }

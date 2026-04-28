@@ -36,10 +36,10 @@ func TestHS256Validate(t *testing.T) {
 
 	// Generate a valid token.
 	claims := &JWTClaims{
-		UserID: "user-123",
-		Email:  "alice@example.com",
+		UserID:      "user-123",
+		Email:       "alice@example.com",
 		Permissions: []string{"read", "write"},
-		Roles: []string{"admin"},
+		Roles:       []string{"admin"},
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   "user-123",
 			Issuer:    "test-issuer",
@@ -205,5 +205,67 @@ func TestContains(t *testing.T) {
 		if got != c.want {
 			t.Errorf("contains(%v, %q) = %v, want %v", c.slice, c.item, got, c.want)
 		}
+	}
+}
+
+func TestSessionIDFromClaimsPrefersDedicatedClaim(t *testing.T) {
+	claims := &JWTClaims{
+		SessionID:   "session-123",
+		Permissions: []string{"legacy-session", "roles.read"},
+	}
+
+	if got := SessionIDFromClaims(claims); got != "session-123" {
+		t.Fatalf("SessionIDFromClaims() = %q, want %q", got, "session-123")
+	}
+}
+
+func TestSessionIDFromClaimsFallsBackToLegacyPermissions(t *testing.T) {
+	claims := &JWTClaims{
+		Permissions: []string{"legacy-session", "roles.read"},
+	}
+
+	if got := SessionIDFromClaims(claims); got != "legacy-session" {
+		t.Fatalf("SessionIDFromClaims() = %q, want %q", got, "legacy-session")
+	}
+}
+
+func TestIssuePairUsesConfiguredIssuerAndDedicatedSessionClaim(t *testing.T) {
+	provider := NewAuthServiceProvider(
+		"access-secret",
+		"refresh-secret",
+		WithIssuer("erg-backend"),
+	)
+
+	pair, err := provider.IssuePair(
+		"session-xyz",
+		"user-1",
+		"admin@erg.edu.vn",
+		[]string{"admin"},
+		[]string{"roles.read", "system.settings"},
+	)
+	if err != nil {
+		t.Fatalf("IssuePair: %v", err)
+	}
+
+	accessClaims, err := provider.ValidateAccessToken(pair.AccessToken)
+	if err != nil {
+		t.Fatalf("ValidateAccessToken: %v", err)
+	}
+	if accessClaims.SessionID != "session-xyz" {
+		t.Fatalf("access session_id = %q, want %q", accessClaims.SessionID, "session-xyz")
+	}
+	if got := SessionIDFromClaims(accessClaims); got != "session-xyz" {
+		t.Fatalf("SessionIDFromClaims(access) = %q, want %q", got, "session-xyz")
+	}
+	if len(accessClaims.Permissions) < 2 || accessClaims.Permissions[0] != "roles.read" {
+		t.Fatalf("access permissions = %v, expected real permissions without legacy session prefix", accessClaims.Permissions)
+	}
+
+	refreshClaims, err := provider.ValidateRefreshToken(pair.RefreshToken)
+	if err != nil {
+		t.Fatalf("ValidateRefreshToken: %v", err)
+	}
+	if refreshClaims.SessionID != "session-xyz" {
+		t.Fatalf("refresh session_id = %q, want %q", refreshClaims.SessionID, "session-xyz")
 	}
 }

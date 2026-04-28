@@ -1,0 +1,25 @@
+# buf.yaml — buf configuration for erg.ninja proto files.
+# Controls linting and breaking change detection.
+version: v2
+
+lint:
+  use:
+    - DEFAULT
+  except:
+    - PACKAGE_NO_IMPORT_CYCLE
+    - COMMENT_RULE
+  ignore:
+    - google
+  service_suffix: Service
+
+breaking:
+  use:
+    - FILE
+  ignore:
+    - google
+
+build:
+  - includes:
+      - proto/lib
+    # Per-service directory strategy: each proto/ dir generates to matching lib/ dir
+    strategy: directory

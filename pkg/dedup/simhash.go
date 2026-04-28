@@ -18,7 +18,7 @@ const DefaultHammingThreshold = 6
 
 // Fingerprint represents a content fingerprint: 64-bit SimHash + SHA-256 exact hash.
 type Fingerprint struct {
-	SimHash uint64    `json:"simhash"`
+	SimHash uint64   `json:"simhash"`
 	SHA256  [32]byte `json:"sha256"` // exact duplicate detection
 }
 
@@ -31,8 +31,8 @@ type Entry struct {
 
 // Deduper detects duplicate content using SimHash (near-duplicate) and SHA-256 (exact).
 type Deduper struct {
-	store      FingerprintStore
-	log        *logger.Logger
+	store            FingerprintStore
+	log              *logger.Logger
 	hammingThreshold int
 }
 
@@ -137,8 +137,8 @@ func WithHammingThreshold(n int) DeduperOption {
 // NewDeduper creates a new content deduplicator.
 func NewDeduper(store FingerprintStore, opts ...DeduperOption) *Deduper {
 	d := &Deduper{
-		store:           store,
-		log:             logger.NoOp(),
+		store:            store,
+		log:              logger.NoOp(),
 		hammingThreshold: DefaultHammingThreshold,
 	}
 	for _, o := range opts {

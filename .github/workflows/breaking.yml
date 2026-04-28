@@ -1,0 +1,41 @@
+name: Proto Breaking Change
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'proto/**/*.proto'
+      - '.github/workflows/breaking.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  breaking:
+    name: Breaking Change Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+
+      - name: Install buf
+        uses: bufbuild/buf-setup-action@v1
+        with:
+          version: "1.28"
+
+      - name: Check breaking changes against main
+        run: |
+          echo "Comparing against main branch..."
+          buf breaking --against '.git#branch=main' \
+            --error-format=config-suggest-yaml \
+            --config buf.yaml \
+            proto/

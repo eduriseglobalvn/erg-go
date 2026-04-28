@@ -1,0 +1,6629 @@
+basePath: /
+definitions:
+  erg_ninja_internal_dto_response.Response:
+    properties:
+      data: {}
+      errors: {}
+      message:
+        type: string
+      path:
+        type: string
+      request_id:
+        type: string
+      statusCode:
+        type: integer
+      timestamp:
+        type: string
+    type: object
+  erg_ninja_internal_modules_analytics_dto.ContentItem:
+    properties:
+      entityId:
+        type: string
+      title:
+        type: string
+      url:
+        type: string
+      views:
+        type: integer
+    type: object
+  erg_ninja_internal_modules_analytics_dto.ContentStats:
+    properties:
+      interestByCategory:
+        items:
+          properties:
+            name:
+              type: string
+            value:
+              type: integer
+          type: object
+        type: array
+      interestByType:
+        items:
+          properties:
+            name:
+              type: string
+            value:
+              type: integer
+          type: object
+        type: array
+      topCourses:
+        items:
+          $ref: '#/definitions/erg_ninja_internal_modules_analytics_dto.ContentItem'
+        type: array
+      topPages:
+        items:
+          $ref: '#/definitions/erg_ninja_internal_modules_analytics_dto.ContentItem'
+        type: array
+      topPosts:
+        items:
+          $ref: '#/definitions/erg_ninja_internal_modules_analytics_dto.ContentItem'
+        type: array
+      trendingPosts:
+        items:
+          $ref: '#/definitions/erg_ninja_internal_modules_analytics_dto.ContentItem'
+        type: array
+    type: object
+  erg_ninja_internal_modules_analytics_dto.DashboardOverviewResponse:
+    properties:
+      content:
+        $ref: '#/definitions/erg_ninja_internal_modules_analytics_dto.ContentStats'
+      dateRange:
+        properties:
+          current:
+            properties:
+              from:
+                type: string
+              to:
+                type: string
+            type: object
+          previous:
+            properties:
+              from:
+                type: string
+              to:
+                type: string
+            type: object
+        type: object
+      devices:
+        $ref: '#/definitions/erg_ninja_internal_modules_analytics_dto.DeviceStats'
+      interactions:
+        items:
+          $ref: '#/definitions/erg_ninja_internal_modules_analytics_dto.InteractionStat'
+        type: array
+      locations:
+        items:
+          $ref: '#/definitions/erg_ninja_internal_modules_analytics_dto.LocationStat'
+        type: array
+      peakHours:
+        items:
+          $ref: '#/definitions/erg_ninja_internal_modules_analytics_dto.PeakHour'
+        type: array
+      summary:
+        $ref: '#/definitions/erg_ninja_internal_modules_analytics_dto.DashboardSummary'
+      trafficChart:
+        items:
+          $ref: '#/definitions/erg_ninja_internal_modules_analytics_dto.TrafficDataPoint'
+        type: array
+      trafficSources:
+        items:
+          $ref: '#/definitions/erg_ninja_internal_modules_analytics_dto.TrafficSource'
+        type: array
+    type: object
+  erg_ninja_internal_modules_analytics_dto.DashboardSummary:
+    properties:
+      activeUsers:
+        $ref: '#/definitions/erg_ninja_internal_modules_analytics_dto.MetricWithGrowth'
+      avgDuration:
+        $ref: '#/definitions/erg_ninja_internal_modules_analytics_dto.MetricWithGrowth'
+      bounceRate:
+        $ref: '#/definitions/erg_ninja_internal_modules_analytics_dto.MetricWithGrowth'
+      newUsers:
+        $ref: '#/definitions/erg_ninja_internal_modules_analytics_dto.MetricWithGrowth'
+      totalVisits:
+        $ref: '#/definitions/erg_ninja_internal_modules_analytics_dto.MetricWithGrowth'
+    type: object
+  erg_ninja_internal_modules_analytics_dto.DeviceStats:
+    properties:
+      browsers:
+        items:
+          $ref: '#/definitions/erg_ninja_internal_modules_analytics_dto.DeviceTypeStat'
+        type: array
+      os:
+        items:
+          $ref: '#/definitions/erg_ninja_internal_modules_analytics_dto.DeviceTypeStat'
+        type: array
+      types:
+        items:
+          $ref: '#/definitions/erg_ninja_internal_modules_analytics_dto.DeviceTypeStat'
+        type: array
+    type: object
+  erg_ninja_internal_modules_analytics_dto.DeviceTypeStat:
+    properties:
+      count:
+        type: integer
+      name:
+        type: string
+      percentage:
+        type: integer
+    type: object
+  erg_ninja_internal_modules_analytics_dto.InteractionStat:
+    properties:
+      count:
+        type: integer
+      name:
+        type: string
+    type: object
+  erg_ninja_internal_modules_analytics_dto.LocationStat:
+    properties:
+      city:
+        type: string
+      count:
+        type: integer
+      country:
+        type: string
+    type: object
+  erg_ninja_internal_modules_analytics_dto.MetricWithGrowth:
+    properties:
+      growth:
+        type: number
+      previous:
+        type: number
+      value:
+        type: number
+    type: object
+  erg_ninja_internal_modules_analytics_dto.PeakHour:
+    properties:
+      count:
+        type: integer
+      hour:
+        type: integer
+    type: object
+  erg_ninja_internal_modules_analytics_dto.TrackEventRequest:
+    properties:
+      eventType:
+        type: string
+      metadata:
+        additionalProperties: true
+        type: object
+      sessionInternalId:
+        type: string
+    required:
+    - eventType
+    - sessionInternalId
+    type: object
+  erg_ninja_internal_modules_analytics_dto.TrackVisitRequest:
+    properties:
+      entityId:
+        type: string
+      entityType:
+        type: string
+      referrer:
+        type: string
+      url:
+        type: string
+    required:
+    - url
+    type: object
+  erg_ninja_internal_modules_analytics_dto.TrackVisitResponse:
+    properties:
+      sessionId:
+        type: string
+      timestamp:
+        type: string
+      visitId:
+        type: string
+    type: object
+  erg_ninja_internal_modules_analytics_dto.TrafficDataPoint:
+    properties:
+      desktop:
+        type: integer
+      label:
+        type: string
+      mobile:
+        type: integer
+      total:
+        type: integer
+    type: object
+  erg_ninja_internal_modules_analytics_dto.TrafficSource:
+    properties:
+      count:
+        type: integer
+      percentage:
+        type: integer
+      source:
+        type: string
+    type: object
+  erg_ninja_internal_modules_analytics_dto.VisitorStat:
+    properties:
+      date:
+        type: string
+      desktop:
+        type: integer
+      mobile:
+        type: integer
+    type: object
+  erg_ninja_internal_modules_audit_dto.AuditLogResponse:
+    properties:
+      action:
+        type: string
+      changes:
+        type: string
+      createdAt:
+        type: string
+      id:
+        type: string
+      ip_address:
+        type: string
+      metadata:
+        type: string
+      resource_id:
+        type: string
+      resource_type:
+        type: string
+      user_agent:
+        type: string
+      user_email:
+        type: string
+      user_id:
+        type: string
+    type: object
+  erg_ninja_internal_modules_auth_dto_request.ForgotPasswordRequest:
+    properties:
+      email:
+        type: string
+    required:
+    - email
+    type: object
+  erg_ninja_internal_modules_auth_dto_request.LoginRequest:
+    properties:
+      email:
+        type: string
+      password:
+        type: string
+    required:
+    - email
+    - password
+    type: object
+  erg_ninja_internal_modules_auth_dto_request.RefreshRequest:
+    properties:
+      refreshToken:
+        type: string
+    required:
+    - refreshToken
+    type: object
+  erg_ninja_internal_modules_auth_dto_request.RegisterRequest:
+    properties:
+      email:
+        type: string
+      fullName:
+        maxLength: 100
+        minLength: 2
+        type: string
+      password:
+        minLength: 8
+        type: string
+    required:
+    - email
+    - fullName
+    - password
+    type: object
+  erg_ninja_internal_modules_auth_dto_request.ResendPinRequest:
+    properties:
+      email:
+        type: string
+      purpose:
+        enum:
+        - register
+        - forgot_password
+        - verify
+        type: string
+    required:
+    - email
+    type: object
+  erg_ninja_internal_modules_auth_dto_request.ResetPasswordRequest:
+    properties:
+      code:
+        type: string
+      email:
+        type: string
+      new_password:
+        minLength: 8
+        type: string
+    required:
+    - code
+    - email
+    - new_password
+    type: object
+  erg_ninja_internal_modules_auth_dto_request.VerifyPinRequest:
+    properties:
+      code:
+        type: string
+      email:
+        type: string
+      purpose:
+        enum:
+        - register
+        - forgot_password
+        - verify
+        type: string
+    required:
+    - code
+    - email
+    - purpose
+    type: object
+  erg_ninja_internal_modules_auth_dto_response.AuthResponse:
+    properties:
+      accessToken:
+        type: string
+      expiresIn:
+        type: integer
+      refreshToken:
+        type: string
+      tokenType:
+        type: string
+      user:
+        $ref: '#/definitions/erg_ninja_internal_modules_auth_dto_response.ProfileResponse'
+    type: object
+  erg_ninja_internal_modules_auth_dto_response.ErrorResponse:
+    properties:
+      code:
+        type: string
+      message:
+        type: string
+    type: object
+  erg_ninja_internal_modules_auth_dto_response.ProfileResponse:
+    properties:
+      accountType:
+        type: string
+      avatarUrl:
+        type: string
+      createdAt:
+        type: string
+      email:
+        type: string
+      fullName:
+        type: string
+      googleEmail:
+        type: string
+      googleEmailVerified:
+        type: boolean
+      googleSub:
+        type: string
+      id:
+        type: string
+      lastLoginProvider:
+        type: string
+      provider:
+        type: string
+      roles:
+        items:
+          type: string
+        type: array
+      status:
+        type: string
+    type: object
+  erg_ninja_internal_modules_auth_dto_response.TokenResponse:
+    properties:
+      accessToken:
+        type: string
+      expiresIn:
+        type: integer
+      refreshToken:
+        type: string
+      tokenType:
+        type: string
+    type: object
+  erg_ninja_internal_modules_courses_dto.CourseResponse:
+    properties:
+      createdAt:
+        type: string
+      description:
+        type: string
+      enrollmentCount:
+        type: integer
+      id:
+        type: string
+      instructorId:
+        type: string
+      ratingAvg:
+        type: number
+      schemaDataJson:
+        type: string
+      schemaType:
+        type: string
+      slug:
+        type: string
+      status:
+        type: string
+      subdomain:
+        type: string
+      tenantId:
+        type: string
+      themeConfig:
+        type: string
+      thumbnailUrl:
+        type: string
+      title:
+        type: string
+      updatedAt:
+        type: string
+    type: object
+  erg_ninja_internal_modules_courses_dto.CreateCourseRequest:
+    properties:
+      description:
+        maxLength: 5000
+        type: string
+      instructorId:
+        type: string
+      schemaDataJson:
+        type: string
+      schemaType:
+        description: Course, OnlineCourse
+        type: string
+      slug:
+        maxLength: 100
+        type: string
+      subdomain:
+        maxLength: 100
+        type: string
+      themeConfig:
+        type: string
+      thumbnailUrl:
+        type: string
+      title:
+        maxLength: 200
+        minLength: 3
+        type: string
+    required:
+    - slug
+    - title
+    type: object
+  erg_ninja_internal_modules_courses_dto.UpdateCourseRequest:
+    properties:
+      description:
+        maxLength: 5000
+        type: string
+      instructorId:
+        type: string
+      schemaDataJson:
+        type: string
+      schemaType:
+        type: string
+      slug:
+        maxLength: 100
+        type: string
+      status:
+        type: string
+      subdomain:
+        maxLength: 100
+        type: string
+      thumbnailUrl:
+        type: string
+      title:
+        maxLength: 200
+        minLength: 3
+        type: string
+    type: object
+  erg_ninja_internal_modules_crawler_dto.CrawlResponse:
+    properties:
+      job_id:
+        type: string
+      message:
+        type: string
+      status:
+        type: string
+      url:
+        type: string
+    type: object
+  erg_ninja_internal_modules_crawler_dto.CrawlURLRequest:
+    properties:
+      config_id:
+        type: string
+      depth:
+        type: integer
+      feed_id:
+        type: string
+      priority:
+        description: 1-10
+        type: integer
+      url:
+        type: string
+    required:
+    - url
+    type: object
+  erg_ninja_internal_modules_crawler_dto.CreateFeedRequest:
+    properties:
+      category:
+        type: string
+      frequency:
+        description: '"5m" | "15m" | "1h" | "6h" | "daily"'
+        type: string
+      language:
+        description: '"vi" | "en"'
+        type: string
+      name:
+        type: string
+      type:
+        description: '"rss" | "atom" | "json" | "auto"'
+        type: string
+      url:
+        type: string
+    required:
+    - name
+    - url
+    type: object
+  erg_ninja_internal_modules_crawler_dto.FeedResponse:
+    properties:
+      category:
+        type: string
+      createdAt:
+        type: string
+      enabled:
+        type: boolean
+      error_count:
+        type: integer
+      frequency:
+        type: string
+      id:
+        type: string
+      item_count:
+        type: integer
+      language:
+        type: string
+      last_error:
+        type: string
+      last_fetch_at:
+        type: string
+      last_item_at:
+        type: string
+      name:
+        type: string
+      type:
+        type: string
+      updatedAt:
+        type: string
+      url:
+        type: string
+    type: object
+  erg_ninja_internal_modules_elearning_dto.CategoryResponse:
+    properties:
+      createdAt:
+        type: string
+      description:
+        type: string
+      id:
+        type: string
+      is_active:
+        type: boolean
+      levels:
+        items:
+          $ref: '#/definitions/erg_ninja_internal_modules_elearning_dto.LevelResponse'
+        type: array
+      name:
+        type: string
+      order:
+        type: integer
+      slug:
+        type: string
+      updatedAt:
+        type: string
+    type: object
+  erg_ninja_internal_modules_elearning_dto.CreateCategoryRequest:
+    properties:
+      description:
+        type: string
+      is_active:
+        type: boolean
+      name:
+        type: string
+      order:
+        type: integer
+      parent_id:
+        type: string
+      slug:
+        type: string
+      tenant_id:
+        type: string
+    required:
+    - name
+    type: object
+  erg_ninja_internal_modules_elearning_dto.LevelResponse:
+    properties:
+      category_id:
+        type: string
+      createdAt:
+        type: string
+      description:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      order:
+        type: integer
+      slug:
+        type: string
+      units:
+        items:
+          $ref: '#/definitions/erg_ninja_internal_modules_elearning_dto.UnitResponse'
+        type: array
+      updatedAt:
+        type: string
+    type: object
+  erg_ninja_internal_modules_elearning_dto.UnitResponse:
+    properties:
+      content:
+        type: string
+      createdAt:
+        type: string
+      description:
+        type: string
+      id:
+        type: string
+      level_id:
+        type: string
+      name:
+        type: string
+      order:
+        type: integer
+      slug:
+        type: string
+      updatedAt:
+        type: string
+    type: object
+  erg_ninja_internal_modules_pages_dto.FaqItem:
+    properties:
+      answer:
+        type: string
+      question:
+        type: string
+    type: object
+  erg_ninja_internal_modules_pages_dto.PageResponse:
+    properties:
+      content:
+        type: string
+      domain:
+        type: string
+      faqs:
+        items:
+          $ref: '#/definitions/erg_ninja_internal_modules_pages_dto.FaqItem'
+        type: array
+      id:
+        type: string
+      metaDescription:
+        type: string
+      metaTitle:
+        type: string
+      published_at:
+        type: string
+      slug:
+        type: string
+      title:
+        type: string
+    type: object
+  erg_ninja_internal_modules_posts_dto.AuthorRef:
+    properties:
+      avatarUrl:
+        type: string
+      fullName:
+        type: string
+      id:
+        type: string
+      socialLinks:
+        $ref: '#/definitions/erg_ninja_internal_modules_posts_dto.SocialLinksDTO'
+    type: object
+  erg_ninja_internal_modules_posts_dto.CategoryRef:
+    properties:
+      id:
+        type: string
+      name:
+        type: string
+      slug:
+        type: string
+    type: object
+  erg_ninja_internal_modules_posts_dto.CreatePostRequest:
+    properties:
+      aiJobId:
+        type: string
+      aiPrompt:
+        type: string
+      canonicalUrl:
+        type: string
+      categoryId:
+        type: string
+      content:
+        type: string
+      excerpt:
+        type: string
+      focusKeyword:
+        type: string
+      isCreatedByAI:
+        type: boolean
+      keywordDensity:
+        type: number
+      keywords:
+        type: string
+      meta:
+        additionalProperties: {}
+        type: object
+      metaDescription:
+        type: string
+      metaTitle:
+        type: string
+      readabilityScore:
+        type: integer
+      schemaType:
+        type: string
+      seoScore:
+        type: integer
+      slug:
+        type: string
+      status:
+        type: string
+      tags:
+        items:
+          type: string
+        type: array
+      thumbnailUrl:
+        type: string
+      title:
+        maxLength: 500
+        minLength: 1
+        type: string
+    required:
+    - categoryId
+    - title
+    type: object
+  erg_ninja_internal_modules_posts_dto.FAQItemDTO:
+    properties:
+      answer:
+        type: string
+      question:
+        type: string
+    type: object
+  erg_ninja_internal_modules_posts_dto.HowToStepDTO:
+    properties:
+      image:
+        type: string
+      name:
+        type: string
+      text:
+        type: string
+      url:
+        type: string
+    type: object
+  erg_ninja_internal_modules_posts_dto.IntroVideoDTO:
+    properties:
+      contentUrl:
+        type: string
+      description:
+        type: string
+      name:
+        type: string
+      thumbnailUrl:
+        type: string
+      uploadDate:
+        type: string
+    type: object
+  erg_ninja_internal_modules_posts_dto.PostResponse:
+    properties:
+      author:
+        $ref: '#/definitions/erg_ninja_internal_modules_posts_dto.AuthorRef'
+      canonicalUrl:
+        type: string
+      category:
+        $ref: '#/definitions/erg_ninja_internal_modules_posts_dto.CategoryRef'
+      commentCount:
+        type: integer
+      content:
+        type: string
+      createdAt:
+        type: string
+      excerpt:
+        type: string
+      faqItems:
+        items:
+          $ref: '#/definitions/erg_ninja_internal_modules_posts_dto.FAQItemDTO'
+        type: array
+      focusKeyword:
+        type: string
+      howToSteps:
+        items:
+          $ref: '#/definitions/erg_ninja_internal_modules_posts_dto.HowToStepDTO'
+        type: array
+      id:
+        type: string
+      introVideo:
+        $ref: '#/definitions/erg_ninja_internal_modules_posts_dto.IntroVideoDTO'
+      isCreatedByAI:
+        type: boolean
+      isPublished:
+        type: boolean
+      meta:
+        additionalProperties: {}
+        type: object
+      metaDescription:
+        type: string
+      metaTitle:
+        type: string
+      ogDescription:
+        type: string
+      ogImage:
+        type: string
+      ogTitle:
+        type: string
+      publishedAt:
+        type: string
+      schemaMarkup:
+        additionalProperties: {}
+        type: object
+      schemaType:
+        type: string
+      seoScore:
+        type: integer
+      slug:
+        type: string
+      status:
+        type: string
+      tags:
+        items:
+          type: string
+        type: array
+      thumbnailUrl:
+        type: string
+      title:
+        type: string
+      twitterCard:
+        type: string
+      updatedAt:
+        type: string
+      viewCount:
+        type: integer
+    type: object
+  erg_ninja_internal_modules_posts_dto.PromoteRequest:
+    properties:
+      category_id:
+        type: string
+    required:
+    - category_id
+    type: object
+  erg_ninja_internal_modules_posts_dto.SocialLinksDTO:
+    properties:
+      facebook:
+        type: string
+      linkedin:
+        type: string
+      twitter:
+        type: string
+    type: object
+  erg_ninja_internal_modules_posts_dto.UpdatePostRequest:
+    properties:
+      aiJobId:
+        type: string
+      aiPrompt:
+        type: string
+      canonicalUrl:
+        type: string
+      categoryId:
+        type: string
+      content:
+        type: string
+      excerpt:
+        type: string
+      focusKeyword:
+        type: string
+      isCreatedByAI:
+        type: boolean
+      keywordDensity:
+        type: number
+      keywords:
+        type: string
+      meta:
+        additionalProperties: {}
+        type: object
+      metaDescription:
+        type: string
+      metaTitle:
+        type: string
+      readabilityScore:
+        type: integer
+      schemaType:
+        type: string
+      seoScore:
+        type: integer
+      slug:
+        type: string
+      status:
+        type: string
+      tags:
+        items:
+          type: string
+        type: array
+      thumbnailUrl:
+        type: string
+      title:
+        type: string
+    type: object
+  erg_ninja_internal_modules_reviews_dto.AdminReviewListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/erg_ninja_internal_modules_reviews_dto.ReviewResponse'
+        type: array
+      meta:
+        $ref: '#/definitions/erg_ninja_internal_modules_reviews_dto.ListMeta'
+    type: object
+  erg_ninja_internal_modules_reviews_dto.CreateReviewRequest:
+    properties:
+      comment:
+        type: string
+      rating:
+        maximum: 5
+        minimum: 1
+        type: integer
+      target_id:
+        type: string
+      target_type:
+        type: string
+      user_email:
+        type: string
+      user_name:
+        type: string
+    required:
+    - comment
+    - rating
+    - target_id
+    - target_type
+    - user_name
+    type: object
+  erg_ninja_internal_modules_reviews_dto.ListMeta:
+    properties:
+      limit:
+        type: integer
+      page:
+        type: integer
+      total:
+        type: integer
+      totalPages:
+        type: integer
+    type: object
+  erg_ninja_internal_modules_reviews_dto.ReviewListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/erg_ninja_internal_modules_reviews_dto.ReviewResponse'
+        type: array
+      meta:
+        $ref: '#/definitions/erg_ninja_internal_modules_reviews_dto.ListMeta'
+      stats:
+        $ref: '#/definitions/erg_ninja_internal_modules_reviews_dto.ReviewStatsResponse'
+    type: object
+  erg_ninja_internal_modules_reviews_dto.ReviewResponse:
+    properties:
+      admin_reply:
+        type: string
+      comment:
+        type: string
+      createdAt:
+        type: string
+      helpful_count:
+        type: integer
+      id:
+        type: string
+      is_featured:
+        type: boolean
+      is_verified_purchase:
+        type: boolean
+      rating:
+        type: integer
+      target_id:
+        type: string
+      target_type:
+        type: string
+      updated_at:
+        type: string
+      user_avatar:
+        type: string
+      user_name:
+        type: string
+    type: object
+  erg_ninja_internal_modules_reviews_dto.ReviewStatsResponse:
+    properties:
+      average:
+        type: number
+      count:
+        type: integer
+      distribution:
+        additionalProperties:
+          format: int64
+          type: integer
+        type: object
+    type: object
+  erg_ninja_internal_modules_trending_dto.TrendingStats:
+    properties:
+      activeTopics:
+        type: integer
+      avgScore:
+        type: number
+      discoveredToday:
+        type: integer
+      topKeyword:
+        type: string
+      totalTopics:
+        type: integer
+    type: object
+  erg_ninja_internal_modules_users_dto_request.UpdateProfileRequest:
+    properties:
+      address:
+        maxLength: 255
+        type: string
+      avatar_url:
+        type: string
+      bio:
+        maxLength: 500
+        type: string
+      city:
+        maxLength: 100
+        type: string
+      date_of_birth:
+        type: string
+      district:
+        maxLength: 100
+        type: string
+      full_name:
+        maxLength: 100
+        minLength: 2
+        type: string
+      gender:
+        enum:
+        - male
+        - female
+        - other
+        type: string
+      job_title:
+        maxLength: 100
+        type: string
+      phone:
+        maxLength: 20
+        type: string
+      region:
+        maxLength: 100
+        type: string
+      social_links:
+        additionalProperties:
+          type: string
+        type: object
+    type: object
+  erg_ninja_internal_modules_users_dto_response.Meta:
+    properties:
+      limit:
+        type: integer
+      page:
+        type: integer
+      total:
+        type: integer
+      totalPages:
+        type: integer
+    type: object
+  erg_ninja_internal_modules_users_dto_response.UserDetailResponse:
+    properties:
+      accountType:
+        type: string
+      address:
+        type: string
+      avatar_url:
+        type: string
+      bio:
+        type: string
+      city:
+        type: string
+      createdAt:
+        type: string
+      date_of_birth:
+        type: string
+      district:
+        type: string
+      email:
+        type: string
+      fullName:
+        type: string
+      gender:
+        type: string
+      googleEmail:
+        type: string
+      googleEmailVerified:
+        type: boolean
+      googleSub:
+        type: string
+      id:
+        type: string
+      isProfileCompleted:
+        type: boolean
+      job_title:
+        type: string
+      last_login_at:
+        type: string
+      lastLoginProvider:
+        type: string
+      login_count:
+        type: integer
+      phone:
+        type: string
+      provider:
+        type: string
+      region:
+        type: string
+      roles:
+        items:
+          type: string
+        type: array
+      social_links:
+        additionalProperties:
+          type: string
+        type: object
+      status:
+        type: string
+      tenant_id:
+        type: string
+      updatedAt:
+        type: string
+    type: object
+  erg_ninja_internal_modules_users_dto_response.UserItemResponse:
+    properties:
+      accountType:
+        type: string
+      avatar_url:
+        type: string
+      createdAt:
+        type: string
+      email:
+        type: string
+      fullName:
+        type: string
+      id:
+        type: string
+      isProfileCompleted:
+        type: boolean
+      last_login_at:
+        type: string
+      lastLoginProvider:
+        type: string
+      phone:
+        type: string
+      provider:
+        type: string
+      roles:
+        items:
+          type: string
+        type: array
+      status:
+        type: string
+    type: object
+  erg_ninja_internal_modules_users_dto_response.UserListResponse:
+    properties:
+      meta:
+        $ref: '#/definitions/erg_ninja_internal_modules_users_dto_response.Meta'
+      users:
+        items:
+          $ref: '#/definitions/erg_ninja_internal_modules_users_dto_response.UserItemResponse'
+        type: array
+    type: object
+  erg_ninja_internal_modules_users_dto_response.UserResponse:
+    properties:
+      accountType:
+        type: string
+      address:
+        type: string
+      avatarUrl:
+        type: string
+      bio:
+        type: string
+      city:
+        type: string
+      createdAt:
+        type: string
+      dateOfBirth:
+        type: string
+      district:
+        type: string
+      email:
+        type: string
+      fullName:
+        type: string
+      gender:
+        type: string
+      googleEmail:
+        type: string
+      googleEmailVerified:
+        type: boolean
+      googleSub:
+        type: string
+      id:
+        type: string
+      isProfileCompleted:
+        type: boolean
+      jobTitle:
+        type: string
+      lastLoginAt:
+        type: string
+      lastLoginProvider:
+        type: string
+      loginCount:
+        type: integer
+      phone:
+        type: string
+      provider:
+        type: string
+      region:
+        type: string
+      roles:
+        items:
+          type: string
+        type: array
+      socialLinks:
+        additionalProperties:
+          type: string
+        type: object
+      status:
+        type: string
+      tenantId:
+        type: string
+      updatedAt:
+        type: string
+    type: object
+  internal_modules_ai_content.GenerateRequest:
+    properties:
+      categoryId:
+        type: string
+      topic:
+        type: string
+    required:
+    - categoryId
+    - topic
+    type: object
+  internal_modules_ai_content.RefineRequest:
+    properties:
+      content:
+        type: string
+      instruction:
+        type: string
+      text:
+        type: string
+    required:
+    - instruction
+    type: object
+  internal_modules_operations.SystemStatus:
+    properties:
+      cpu_usage:
+        type: number
+      db_status:
+        type: string
+      go_routines:
+        type: integer
+      memory_free:
+        type: integer
+      memory_percent:
+        type: number
+      memory_total:
+        type: integer
+      os:
+        type: string
+      platform:
+        type: string
+      timestamp:
+        type: string
+      uptime:
+        type: integer
+    type: object
+  internal_modules_seo.CreateKeywordRequest:
+    properties:
+      keyword:
+        type: string
+      linkLimit:
+        type: integer
+      targetUrl:
+        type: string
+    type: object
+  internal_modules_seo.SeoKeyword:
+    properties:
+      createdAt:
+        type: string
+      id:
+        type: string
+      isActive:
+        type: boolean
+      keyword:
+        type: string
+      linkLimit:
+        type: integer
+      targetUrl:
+        type: string
+      updatedAt:
+        type: string
+    type: object
+host: localhost:8080
+info:
+  contact:
+    name: ERG Support
+    url: https://erg.ninja/support
+  description: The unified backend API for ERG — a multi-tenant eLearning, content
+    management, and automation platform.
+  title: ERG Platform API
+  version: "1.0"
+paths:
+  /admin/elearning/categories:
+    get:
+      consumes:
+      - application/json
+      description: Fetch all categories for admin management.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/erg_ninja_internal_modules_elearning_dto.CategoryResponse'
+            type: array
+      security:
+      - BearerAuth: []
+      summary: 'Admin: List categories'
+      tags:
+      - Elearning Admin
+    post:
+      consumes:
+      - application/json
+      description: Create a new category.
+      parameters:
+      - description: Category Data
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/erg_ninja_internal_modules_elearning_dto.CreateCategoryRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/erg_ninja_internal_modules_elearning_dto.CategoryResponse'
+      security:
+      - BearerAuth: []
+      summary: 'Admin: Create category'
+      tags:
+      - Elearning Admin
+  /admin/elearning/categories/{id}:
+    delete:
+      description: Deletes an elearning category.
+      parameters:
+      - description: Category ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 'Admin: Delete category'
+      tags:
+      - Elearning Admin
+    patch:
+      consumes:
+      - application/json
+      description: Updates an elearning category.
+      parameters:
+      - description: Category ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 'Admin: Update category'
+      tags:
+      - Elearning Admin
+  /admin/elearning/levels:
+    post:
+      consumes:
+      - application/json
+      description: Creates a new elearning level.
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 'Admin: Create level'
+      tags:
+      - Elearning Admin
+  /admin/elearning/levels/{id}:
+    delete:
+      description: Deletes an elearning level.
+      parameters:
+      - description: Level ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 'Admin: Delete level'
+      tags:
+      - Elearning Admin
+    patch:
+      consumes:
+      - application/json
+      description: Updates an elearning level.
+      parameters:
+      - description: Level ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 'Admin: Update level'
+      tags:
+      - Elearning Admin
+  /admin/elearning/units:
+    post:
+      consumes:
+      - application/json
+      description: Creates a new elearning unit.
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 'Admin: Create unit'
+      tags:
+      - Elearning Admin
+  /admin/elearning/units/{id}:
+    delete:
+      description: Deletes an elearning unit.
+      parameters:
+      - description: Unit ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 'Admin: Delete unit'
+      tags:
+      - Elearning Admin
+    patch:
+      consumes:
+      - application/json
+      description: Updates an elearning unit.
+      parameters:
+      - description: Unit ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 'Admin: Update unit'
+      tags:
+      - Elearning Admin
+  /api/access-control/bulk-assign-role:
+    post:
+      consumes:
+      - application/json
+      description: Assigns a role to multiple users.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Bulk assign role
+      tags:
+      - Access Control
+  /api/access-control/feature-config:
+    get:
+      description: Returns feature flags/config for access control.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get feature configuration
+      tags:
+      - Access Control
+  /api/access-control/permission-groups:
+    get:
+      description: Returns permission groups for categorization.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List permission groups
+      tags:
+      - Access Control
+  /api/access-control/permissions:
+    get:
+      description: Returns all system permissions.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List all permissions
+      tags:
+      - Access Control
+  /api/access-control/roles:
+    get:
+      description: Returns all available roles.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List all roles
+      tags:
+      - Access Control
+    post:
+      consumes:
+      - application/json
+      description: Creates a new role with permissions.
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create a role
+      tags:
+      - Access Control
+  /api/access-control/roles/{id}:
+    delete:
+      description: Deletes a role by ID.
+      parameters:
+      - description: Role ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete a role
+      tags:
+      - Access Control
+    get:
+      description: Returns a role by ID.
+      parameters:
+      - description: Role ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get a role
+      tags:
+      - Access Control
+    put:
+      consumes:
+      - application/json
+      description: Updates an existing role.
+      parameters:
+      - description: Role ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update a role
+      tags:
+      - Access Control
+  /api/access-control/users/{userId}/effective-permissions:
+    get:
+      description: Returns resolved permissions for a user (roles + overrides).
+      parameters:
+      - description: User ID
+        in: path
+        name: userId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get effective permissions
+      tags:
+      - Access Control
+  /api/access-control/users/{userId}/permission-overrides:
+    get:
+      description: Returns permission overrides for a specific user.
+      parameters:
+      - description: User ID
+        in: path
+        name: userId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List permission overrides
+      tags:
+      - Access Control
+  /api/access-control/users/{userId}/permissions:
+    post:
+      consumes:
+      - application/json
+      description: Adds a permission override for a user.
+      parameters:
+      - description: User ID
+        in: path
+        name: userId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Add permission override
+      tags:
+      - Access Control
+  /api/access-control/users/{userId}/permissions/{overrideId}:
+    delete:
+      description: Removes a permission override.
+      parameters:
+      - description: User ID
+        in: path
+        name: userId
+        required: true
+        type: string
+      - description: Override ID
+        in: path
+        name: overrideId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete permission override
+      tags:
+      - Access Control
+  /api/access-control/users/{userId}/preview:
+    post:
+      consumes:
+      - application/json
+      description: Preview what changes would look like before applying.
+      parameters:
+      - description: User ID
+        in: path
+        name: userId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Preview permission changes
+      tags:
+      - Access Control
+  /api/access-control/users/{userId}/roles:
+    post:
+      consumes:
+      - application/json
+      description: Assigns one or more roles to a specific user.
+      parameters:
+      - description: User ID
+        in: path
+        name: userId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Assign roles to user
+      tags:
+      - Access Control
+  /api/access-control/users/{userId}/roles/{roleId}:
+    delete:
+      description: Removes a specific role from a user.
+      parameters:
+      - description: User ID
+        in: path
+        name: userId
+        required: true
+        type: string
+      - description: Role ID
+        in: path
+        name: roleId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Remove role from user
+      tags:
+      - Access Control
+  /api/ai-content/generate:
+    post:
+      consumes:
+      - application/json
+      description: Enqueues a task to generate a post using AI.
+      parameters:
+      - description: Generation parameters
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/internal_modules_ai_content.GenerateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Generate AI content
+      tags:
+      - AI Content
+  /api/ai-content/history:
+    get:
+      description: Returns past AI generation jobs.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              additionalProperties: true
+              type: object
+            type: array
+      summary: Get AI generation history
+      tags:
+      - AI Content
+  /api/ai-content/keys:
+    post:
+      consumes:
+      - application/json
+      description: Creates a new API key for AI content access.
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create an API key
+      tags:
+      - AI Content Keys
+  /api/ai-content/keys/{id}:
+    delete:
+      description: Revokes and removes an API key.
+      parameters:
+      - description: Key ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete an API key
+      tags:
+      - AI Content Keys
+  /api/ai-content/keys/{id}/reactivate:
+    post:
+      description: Reactivates a previously deactivated API key.
+      parameters:
+      - description: Key ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Reactivate an API key
+      tags:
+      - AI Content Keys
+  /api/ai-content/keys/{id}/test:
+    post:
+      description: Tests connectivity of an API key.
+      parameters:
+      - description: Key ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Test an API key
+      tags:
+      - AI Content Keys
+  /api/ai-content/keys/dashboard:
+    get:
+      description: Returns aggregated usage stats for all API keys.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: API keys usage dashboard
+      tags:
+      - AI Content Keys
+  /api/ai-content/keys/my:
+    get:
+      description: Returns the API keys belonging to the current user.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              additionalProperties: true
+              type: object
+            type: array
+      security:
+      - BearerAuth: []
+      summary: List user's API keys
+      tags:
+      - AI Content Keys
+  /api/ai-content/provider-health:
+    get:
+      description: Returns health status of configured AI providers.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Check AI provider health
+      tags:
+      - AI Content
+  /api/ai-content/refine:
+    post:
+      consumes:
+      - application/json
+      description: Sends content to LLM for improvements or rewriting.
+      parameters:
+      - description: Content to refine
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/internal_modules_ai_content.RefineRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Refine existing content
+      tags:
+      - AI Content
+  /api/ai-content/status/{jobId}:
+    get:
+      description: Returns the current state of a background generation job.
+      parameters:
+      - description: Job ID
+        in: path
+        name: jobId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Check generation job status
+      tags:
+      - AI Content
+  /api/ai-content/templates:
+    get:
+      description: Returns predefined content generation templates.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              additionalProperties: true
+              type: object
+            type: array
+      summary: Get available templates
+      tags:
+      - AI Content
+  /api/audit/logs:
+    get:
+      description: Returns a paginated list of audit logs with filters.
+      parameters:
+      - description: Page number
+        in: query
+        name: page
+        type: integer
+      - description: Items per page
+        in: query
+        name: limit
+        type: integer
+      - description: Filter by action
+        in: query
+        name: action
+        type: string
+      - description: Filter by user
+        in: query
+        name: user_id
+        type: string
+      - description: Filter by resource
+        in: query
+        name: resource_type
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/erg_ninja_internal_dto_response.Response'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/erg_ninja_internal_modules_audit_dto.AuditLogResponse'
+                  type: array
+              type: object
+      security:
+      - BearerAuth: []
+      summary: List audit logs
+      tags:
+      - Audit
+  /api/audit/logs/{id}:
+    get:
+      description: Returns the details of a single audit log entry.
+      parameters:
+      - description: Log ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/erg_ninja_internal_modules_audit_dto.AuditLogResponse'
+      security:
+      - BearerAuth: []
+      summary: Get audit log detail
+      tags:
+      - Audit
+  /api/auth/forgot-password:
+    post:
+      consumes:
+      - application/json
+      description: Initiate the password recovery process.
+      parameters:
+      - description: Email
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/erg_ninja_internal_modules_auth_dto_request.ForgotPasswordRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Forgot Password
+      tags:
+      - Auth
+  /api/auth/login:
+    post:
+      consumes:
+      - application/json
+      description: Authenticate user and return JWT tokens.
+      parameters:
+      - description: Login Credentials
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/erg_ninja_internal_modules_auth_dto_request.LoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/erg_ninja_internal_modules_auth_dto_response.AuthResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/erg_ninja_internal_modules_auth_dto_response.ErrorResponse'
+      summary: Login
+      tags:
+      - Auth
+  /api/auth/logout:
+    post:
+      consumes:
+      - application/json
+      description: Invalidate the current user session.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Logout
+      tags:
+      - Auth
+  /api/auth/profile:
+    get:
+      consumes:
+      - application/json
+      description: Fetch profile details for the authenticated user.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/erg_ninja_internal_modules_auth_dto_response.ProfileResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/erg_ninja_internal_modules_auth_dto_response.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get Profile
+      tags:
+      - Auth
+  /api/auth/refresh:
+    post:
+      consumes:
+      - application/json
+      description: Get a new access token using a refresh token.
+      parameters:
+      - description: Refresh Token
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/erg_ninja_internal_modules_auth_dto_request.RefreshRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/erg_ninja_internal_modules_auth_dto_response.TokenResponse'
+      summary: Refresh Token
+      tags:
+      - Auth
+  /api/auth/register:
+    post:
+      consumes:
+      - application/json
+      description: Register a new user account.
+      parameters:
+      - description: Registration Data
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/erg_ninja_internal_modules_auth_dto_request.RegisterRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/erg_ninja_internal_modules_auth_dto_response.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/erg_ninja_internal_modules_auth_dto_response.ErrorResponse'
+      summary: Register
+      tags:
+      - Auth
+  /api/auth/resend-pin:
+    post:
+      consumes:
+      - application/json
+      description: Re-send the one-time PIN to user email.
+      parameters:
+      - description: Email & Purpose
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/erg_ninja_internal_modules_auth_dto_request.ResendPinRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Resend PIN
+      tags:
+      - Auth
+  /api/auth/reset-password:
+    post:
+      consumes:
+      - application/json
+      description: Set a new password using a recovery token or PIN.
+      parameters:
+      - description: Reset Data
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/erg_ninja_internal_modules_auth_dto_request.ResetPasswordRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Reset Password
+      tags:
+      - Auth
+  /api/auth/verify-pin:
+    post:
+      consumes:
+      - application/json
+      description: Verify the one-time PIN sent to user email.
+      parameters:
+      - description: PIN Data
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/erg_ninja_internal_modules_auth_dto_request.VerifyPinRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Verify PIN
+      tags:
+      - Auth
+  /api/blacklist:
+    get:
+      description: Returns all blacklist entries.
+      parameters:
+      - description: Type filter
+        in: query
+        name: type
+        type: string
+      - description: Enabled filter
+        in: query
+        name: enabled
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: List blacklist entries
+      tags:
+      - Crawler Blacklist
+    post:
+      consumes:
+      - application/json
+      description: Adds a new blacklist pattern.
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create blacklist entry
+      tags:
+      - Crawler Blacklist
+  /api/blacklist/{id}:
+    delete:
+      description: Removes a blacklist entry.
+      parameters:
+      - description: Entry ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete blacklist entry
+      tags:
+      - Crawler Blacklist
+  /api/bot/accounts:
+    get:
+      description: Returns linked platform accounts for a user.
+      parameters:
+      - description: User ID
+        in: query
+        name: user_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List linked accounts
+      tags:
+      - Bot
+  /api/bot/accounts/{id}:
+    delete:
+      description: Removes a linked platform account.
+      parameters:
+      - description: Platform User ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Platform
+        in: query
+        name: platform
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Unlink account
+      tags:
+      - Bot
+  /api/bot/conversations:
+    get:
+      description: Returns paginated bot conversations.
+      parameters:
+      - description: Platform filter
+        in: query
+        name: platform
+        type: string
+      - description: Limit
+        in: query
+        name: limit
+        type: integer
+      - description: Skip
+        in: query
+        name: skip
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List conversations
+      tags:
+      - Bot
+  /api/bot/conversations/{id}:
+    get:
+      description: Returns a single conversation by ID.
+      parameters:
+      - description: Conversation ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get conversation
+      tags:
+      - Bot
+  /api/bot/conversations/{id}/send:
+    post:
+      consumes:
+      - application/json
+      description: Sends a message to a conversation via platform.
+      parameters:
+      - description: Conversation ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Send message to conversation
+      tags:
+      - Bot
+  /api/bot/conversations/{id}/wizard:
+    get:
+      description: Returns the active wizard state for a conversation.
+      parameters:
+      - description: Conversation ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get wizard state
+      tags:
+      - Bot
+  /api/bot/link:
+    post:
+      consumes:
+      - application/json
+      description: Generates a link code for account linking.
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create link code
+      tags:
+      - Bot
+  /api/bot/link/{code}:
+    get:
+      description: Verifies a link code for account linking.
+      parameters:
+      - description: Link code
+        in: path
+        name: code
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Verify link code
+      tags:
+      - Bot
+  /api/courses:
+    get:
+      consumes:
+      - application/json
+      description: Fetch a paginated list of courses with optional status and search
+        filtering.
+      parameters:
+      - description: 'Page number (default: 1)'
+        in: query
+        name: page
+        type: integer
+      - description: 'Items per page (default: 20, max: 100)'
+        in: query
+        name: limit
+        type: integer
+      - description: Filter by status (draft|published)
+        in: query
+        name: status
+        type: string
+      - description: Search in title or description
+        in: query
+        name: search
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/erg_ninja_internal_dto_response.Response'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/erg_ninja_internal_modules_courses_dto.CourseResponse'
+                  type: array
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/erg_ninja_internal_dto_response.Response'
+      summary: List courses
+      tags:
+      - Courses
+    post:
+      consumes:
+      - application/json
+      description: Create a new course for the current tenant. Admin only.
+      parameters:
+      - description: Course Data
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/erg_ninja_internal_modules_courses_dto.CreateCourseRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/erg_ninja_internal_modules_courses_dto.CourseResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/erg_ninja_internal_dto_response.Response'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/erg_ninja_internal_dto_response.Response'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/erg_ninja_internal_dto_response.Response'
+      security:
+      - BearerAuth: []
+      summary: Create a new course
+      tags:
+      - Courses
+  /api/courses/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Permanently delete a course and its associated lessons. Admin only.
+      parameters:
+      - description: Course ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/erg_ninja_internal_dto_response.Response'
+      security:
+      - BearerAuth: []
+      summary: Delete a course
+      tags:
+      - Courses
+    get:
+      consumes:
+      - application/json
+      description: Fetch full course details including lessons and settings.
+      parameters:
+      - description: Course ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/erg_ninja_internal_modules_courses_dto.CourseResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/erg_ninja_internal_dto_response.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/erg_ninja_internal_dto_response.Response'
+      summary: Get course by ID
+      tags:
+      - Courses
+    patch:
+      consumes:
+      - application/json
+      description: Update course fields (title, description, status, etc.). Admin
+        only.
+      parameters:
+      - description: Course ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Update Data
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/erg_ninja_internal_modules_courses_dto.UpdateCourseRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/erg_ninja_internal_modules_courses_dto.CourseResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/erg_ninja_internal_dto_response.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/erg_ninja_internal_dto_response.Response'
+      security:
+      - BearerAuth: []
+      summary: Update an existing course
+      tags:
+      - Courses
+  /api/courses/{id}/lessons/reorder:
+    post:
+      consumes:
+      - application/json
+      description: Reorders lessons within a course.
+      parameters:
+      - description: Course ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Reorder lessons
+      tags:
+      - Courses
+  /api/courses/{id}/schema:
+    get:
+      description: Returns JSON-LD schema.org markup for a course.
+      parameters:
+      - description: Course ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/ld+json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get course schema
+      tags:
+      - Courses
+  /api/courses/{id}/theme:
+    patch:
+      consumes:
+      - application/json
+      description: Updates the visual theme configuration for a course.
+      parameters:
+      - description: Course ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update course theme
+      tags:
+      - Courses
+  /api/courses/subdomain/{sub}:
+    get:
+      consumes:
+      - application/json
+      description: Fetch course details and lessons by the tenant's slug/subdomain.
+      parameters:
+      - description: Subdomain/Slug
+        in: path
+        name: sub
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/erg_ninja_internal_modules_courses_dto.CourseResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/erg_ninja_internal_dto_response.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/erg_ninja_internal_dto_response.Response'
+      summary: Get course by subdomain
+      tags:
+      - Courses
+  /api/crawler/auto-crawl:
+    post:
+      consumes:
+      - application/json
+      description: Discovery crawl for hidden categories or a specific feed.
+      parameters:
+      - description: Optional feed + keywords
+        in: body
+        name: payload
+        schema:
+          additionalProperties: true
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Trigger auto-crawl
+      tags:
+      - Crawler
+  /api/crawler/configs:
+    get:
+      description: Returns all scraper configs (selectors, types, etc).
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: List scraper configurations
+      tags:
+      - Crawler Config
+    post:
+      consumes:
+      - application/json
+      description: Adds a new scraper configuration.
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Create a scraper config
+      tags:
+      - Crawler Config
+  /api/crawler/configs/{id}:
+    delete:
+      description: Deletes a scraper configuration.
+      parameters:
+      - description: Config ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Delete a scraper config
+      tags:
+      - Crawler Config
+    patch:
+      consumes:
+      - application/json
+      description: Updates an existing scraper configuration.
+      parameters:
+      - description: Config ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Update a scraper config
+      tags:
+      - Crawler Config
+  /api/crawler/crawl:
+    post:
+      consumes:
+      - application/json
+      description: Initiates a background crawling pipeline for a specific URL.
+      parameters:
+      - description: URL to crawl
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/erg_ninja_internal_modules_crawler_dto.CrawlURLRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/erg_ninja_internal_modules_crawler_dto.CrawlResponse'
+      summary: Start a crawl job
+      tags:
+      - Crawler
+  /api/crawler/crawl/{job_id}:
+    get:
+      description: Returns the status and results of a specific crawl job.
+      parameters:
+      - description: Job ID
+        in: path
+        name: job_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Check crawl job status
+      tags:
+      - Crawler
+  /api/crawler/crawl/{job_id}/stream:
+    get:
+      description: Streams real-time crawl progress via SSE.
+      parameters:
+      - description: Job ID
+        in: path
+        name: job_id
+        required: true
+        type: string
+      produces:
+      - text/event-stream
+      responses:
+        "200":
+          description: OK
+      summary: Stream crawl progress
+      tags:
+      - Crawler
+  /api/crawler/cron-presets:
+    get:
+      description: Returns predefined cron schedule options.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              additionalProperties:
+                type: string
+              type: object
+            type: array
+      summary: Get available cron presets
+      tags:
+      - Crawler Utils
+  /api/crawler/history:
+    get:
+      description: Returns paginated crawl history.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List crawl history
+      tags:
+      - Crawler
+  /api/crawler/history/{id}:
+    get:
+      description: Returns a specific crawl history entry.
+      parameters:
+      - description: History ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get crawl history detail
+      tags:
+      - Crawler
+  /api/crawler/pipeline-status:
+    get:
+      description: Returns active workers, queued jobs, and system resource usage.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get crawler pipeline health
+      tags:
+      - Crawler Utils
+  /api/crawler/quick-add:
+    post:
+      consumes:
+      - application/json
+      description: Creates an RSS feed and triggers immediate crawl.
+      parameters:
+      - description: Feed URL and Category
+        in: body
+        name: payload
+        required: true
+        schema:
+          additionalProperties: true
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Quick-add a feed and crawl
+      tags:
+      - Crawler
+  /api/crawler/scheduler-status:
+    get:
+      description: Returns the current state of the auto-refresh scheduler.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get scheduler status
+      tags:
+      - Crawler Utils
+  /api/crawler/smart-detect:
+    post:
+      consumes:
+      - application/json
+      description: Uses heuristics to suggest title and content selectors for a URL.
+      parameters:
+      - description: Target URL
+        in: body
+        name: payload
+        required: true
+        schema:
+          additionalProperties: true
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Detect web structure
+      tags:
+      - Crawler Utils
+  /api/crawler/stats:
+    get:
+      description: Returns overall crawl statistics.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get crawl stats
+      tags:
+      - Crawler
+  /api/elearning/categories:
+    get:
+      consumes:
+      - application/json
+      description: Fetch all categories for the current tenant.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/erg_ninja_internal_modules_elearning_dto.CategoryResponse'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: List categories
+      tags:
+      - Elearning
+  /api/elearning/categories/{slug}:
+    get:
+      consumes:
+      - application/json
+      description: Fetch category details by slug.
+      parameters:
+      - description: Category Slug
+        in: path
+        name: slug
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/erg_ninja_internal_modules_elearning_dto.CategoryResponse'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get category by slug
+      tags:
+      - Elearning
+  /api/elearning/levels/{slug}:
+    get:
+      consumes:
+      - application/json
+      description: Fetch level details by slug.
+      parameters:
+      - description: Level Slug
+        in: path
+        name: slug
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/erg_ninja_internal_modules_elearning_dto.LevelResponse'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get level by slug
+      tags:
+      - Elearning
+  /api/insight/behavior:
+    post:
+      consumes:
+      - application/json
+      description: Track an event linked to a session.
+      parameters:
+      - description: Event Data
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/erg_ninja_internal_modules_analytics_dto.TrackEventRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Track user behavior
+      tags:
+      - Insight
+  /api/insight/export:
+    get:
+      description: Exports analytics data as CSV.
+      parameters:
+      - description: Start date
+        in: query
+        name: from
+        required: true
+        type: string
+      - description: End date
+        in: query
+        name: to
+        required: true
+        type: string
+      produces:
+      - text/csv
+      responses:
+        "200":
+          description: OK
+      security:
+      - BearerAuth: []
+      summary: Export analytics CSV
+      tags:
+      - Insight
+  /api/insight/firebase/stats:
+    get:
+      description: Returns Firebase sync statistics.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Firebase sync stats
+      tags:
+      - Insight Firebase
+  /api/insight/firebase/sync:
+    post:
+      consumes:
+      - application/json
+      description: Imports Firebase events into analytics.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Sync Firebase events
+      tags:
+      - Insight Firebase
+  /api/insight/identify:
+    post:
+      consumes:
+      - application/json
+      description: Links a session to a user ID after login.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Identify user
+      tags:
+      - Insight
+  /api/insight/insights:
+    get:
+      description: Returns AI-generated insights from analytics.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Analytics insights
+      tags:
+      - Insight
+  /api/insight/overview:
+    get:
+      consumes:
+      - application/json
+      description: Get comprehensive analytics overview for the dashboard.
+      parameters:
+      - description: Start date (ISO)
+        in: query
+        name: from
+        type: string
+      - description: End date (ISO)
+        in: query
+        name: to
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/erg_ninja_internal_modules_analytics_dto.DashboardOverviewResponse'
+      security:
+      - BearerAuth: []
+      summary: Dashboard overview
+      tags:
+      - Insight
+  /api/insight/posts/summary:
+    get:
+      description: Returns post-level analytics summary.
+      parameters:
+      - description: Range (7d/30d/90d)
+        in: query
+        name: range
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Post analytics summary
+      tags:
+      - Insight
+  /api/insight/session/{id}/finish:
+    put:
+      consumes:
+      - application/json
+      description: Marks a session as finished with duration.
+      parameters:
+      - description: Session ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Finish session
+      tags:
+      - Insight
+  /api/insight/session/begin:
+    post:
+      consumes:
+      - application/json
+      description: Register a new user session visit.
+      parameters:
+      - description: Visit Data
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/erg_ninja_internal_modules_analytics_dto.TrackVisitRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/erg_ninja_internal_modules_analytics_dto.TrackVisitResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/erg_ninja_internal_dto_response.Response'
+      summary: Begin session tracking
+      tags:
+      - Insight
+  /api/insight/sessions/{sessionId}:
+    get:
+      description: Returns session detail by ID.
+      parameters:
+      - description: Session ID
+        in: path
+        name: sessionId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get session detail
+      tags:
+      - Insight
+  /api/insight/stats:
+    get:
+      consumes:
+      - application/json
+      description: Get overall analytics statistics.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/erg_ninja_internal_modules_analytics_dto.VisitorStat'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/erg_ninja_internal_dto_response.Response'
+      security:
+      - BearerAuth: []
+      summary: General statistics
+      tags:
+      - Insight
+  /api/insight/top-content:
+    get:
+      description: Returns top pages, posts, and courses.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Top content
+      tags:
+      - Insight
+  /api/insight/traffic-sources:
+    get:
+      description: Returns traffic source breakdown.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Traffic sources
+      tags:
+      - Insight
+  /api/insight/user-journey/{sessionId}:
+    get:
+      description: Returns the event journey for a session.
+      parameters:
+      - description: Session ID
+        in: path
+        name: sessionId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get user journey
+      tags:
+      - Insight
+  /api/operations/configs:
+    get:
+      description: Returns all global system configuration keys and values.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List system configurations
+      tags:
+      - Operations Config
+  /api/operations/configs/{key}:
+    delete:
+      description: Removes a configuration key from the system.
+      parameters:
+      - description: Config Key
+        in: path
+        name: key
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete a system configuration
+      tags:
+      - Operations Config
+    get:
+      description: Returns a specific configuration value by key.
+      parameters:
+      - description: Config Key
+        in: path
+        name: key
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get a system configuration
+      tags:
+      - Operations Config
+    put:
+      consumes:
+      - application/json
+      description: Sets or updates a configuration value.
+      parameters:
+      - description: Config Key
+        in: path
+        name: key
+        required: true
+        type: string
+      - description: Config Data
+        in: body
+        name: payload
+        required: true
+        schema:
+          additionalProperties: true
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update a system configuration
+      tags:
+      - Operations Config
+  /api/operations/firewall/block:
+    post:
+      consumes:
+      - application/json
+      description: Adds an IP to the Redis blacklist with optional duration.
+      parameters:
+      - description: IP and Duration
+        in: body
+        name: payload
+        required: true
+        schema:
+          additionalProperties: true
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Block an IP address
+      tags:
+      - Operations Firewall
+  /api/operations/firewall/check/{ip}:
+    get:
+      description: Returns the blocked status and TTL for a specific IP.
+      parameters:
+      - description: IP Address
+        in: path
+        name: ip
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Check if an IP is blocked
+      tags:
+      - Operations Firewall
+  /api/operations/firewall/list:
+    get:
+      description: Returns a list of currently blocked IPs and their TTL.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/erg_ninja_internal_dto_response.Response'
+            - properties:
+                data:
+                  items:
+                    additionalProperties: true
+                    type: object
+                  type: array
+              type: object
+      security:
+      - BearerAuth: []
+      summary: List all blocked IPs
+      tags:
+      - Operations Firewall
+  /api/operations/firewall/unblock:
+    post:
+      consumes:
+      - application/json
+      description: Removes an IP from the Redis blacklist.
+      parameters:
+      - description: IP Address
+        in: body
+        name: payload
+        required: true
+        schema:
+          additionalProperties: true
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Unblock an IP address
+      tags:
+      - Operations Firewall
+  /api/operations/logs:
+    get:
+      description: Retrieves paginated audit logs from MongoDB.
+      parameters:
+      - description: Page number
+        in: query
+        name: page
+        type: integer
+      - description: Items per page
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/erg_ninja_internal_dto_response.Response'
+            - properties:
+                data:
+                  items:
+                    additionalProperties: true
+                    type: object
+                  type: array
+              type: object
+      security:
+      - BearerAuth: []
+      summary: List audit logs
+      tags:
+      - Operations
+  /api/operations/system-status:
+    get:
+      description: Returns CPU, RAM, and Database connectivity status.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_modules_operations.SystemStatus'
+      security:
+      - BearerAuth: []
+      summary: Get system health status
+      tags:
+      - Operations
+  /api/pages/{slug}:
+    get:
+      consumes:
+      - application/json
+      description: Fetch a CMS page by its URL slug.
+      parameters:
+      - description: Page Slug
+        in: path
+        name: slug
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/erg_ninja_internal_modules_pages_dto.PageResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/erg_ninja_internal_dto_response.Response'
+      summary: Get page by slug
+      tags:
+      - Pages
+  /api/posts:
+    get:
+      consumes:
+      - application/json
+      description: Fetch paged and filtered list of posts.
+      parameters:
+      - description: Page number
+        in: query
+        name: page
+        type: integer
+      - description: Items per page
+        in: query
+        name: limit
+        type: integer
+      - description: Search query
+        in: query
+        name: search
+        type: string
+      - description: Filter by category slug
+        in: query
+        name: category
+        type: string
+      - description: Filter by status
+        in: query
+        name: status
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/erg_ninja_internal_dto_response.Response'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/erg_ninja_internal_modules_posts_dto.PostResponse'
+                  type: array
+              type: object
+      summary: List all posts
+      tags:
+      - Posts
+    post:
+      consumes:
+      - application/json
+      description: Create a new blog post or news item.
+      parameters:
+      - description: Post Data
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/erg_ninja_internal_modules_posts_dto.CreatePostRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/erg_ninja_internal_modules_posts_dto.PostResponse'
+      security:
+      - BearerAuth: []
+      summary: Create a new post
+      tags:
+      - Posts
+  /api/posts/{id}:
+    delete:
+      description: Moves a post to trash (soft delete).
+      parameters:
+      - description: Post ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Soft-delete a post
+      tags:
+      - Posts
+    get:
+      consumes:
+      - application/json
+      description: Fetch a single post by its internal ID.
+      parameters:
+      - description: Post ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/erg_ninja_internal_modules_posts_dto.PostResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/erg_ninja_internal_dto_response.Response'
+      summary: Get post by ID
+      tags:
+      - Posts
+    put:
+      consumes:
+      - application/json
+      description: Updates an existing post by ID.
+      parameters:
+      - description: Post ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Update data
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/erg_ninja_internal_modules_posts_dto.UpdatePostRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/erg_ninja_internal_modules_posts_dto.PostResponse'
+      security:
+      - BearerAuth: []
+      summary: Update a post
+      tags:
+      - Posts
+  /api/posts/{id}/permanent:
+    delete:
+      description: Permanently removes a post from the database.
+      parameters:
+      - description: Post ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Permanently delete a post
+      tags:
+      - Posts
+  /api/posts/{id}/promote:
+    post:
+      consumes:
+      - application/json
+      description: Promotes a crawled/draft post to a specific category.
+      parameters:
+      - description: Post ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Promotion data
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/erg_ninja_internal_modules_posts_dto.PromoteRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/erg_ninja_internal_modules_posts_dto.PostResponse'
+      security:
+      - BearerAuth: []
+      summary: Promote a post
+      tags:
+      - Posts
+  /api/posts/{id}/restore:
+    put:
+      description: Restores a soft-deleted post from trash.
+      parameters:
+      - description: Post ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Restore a trashed post
+      tags:
+      - Posts
+  /api/posts/categories:
+    get:
+      consumes:
+      - application/json
+      description: Fetch all categories available for posts.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: List post categories
+      tags:
+      - Posts Categories
+    post:
+      consumes:
+      - application/json
+      description: Creates a new post category.
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create a category
+      tags:
+      - Posts Categories
+  /api/posts/categories/{id}:
+    delete:
+      description: Deletes a post category.
+      parameters:
+      - description: Category ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete a category
+      tags:
+      - Posts Categories
+    get:
+      description: Returns a single post category by ID.
+      parameters:
+      - description: Category ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get a category
+      tags:
+      - Posts Categories
+    put:
+      consumes:
+      - application/json
+      description: Updates an existing post category.
+      parameters:
+      - description: Category ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update a category
+      tags:
+      - Posts Categories
+  /api/posts/hidden:
+    get:
+      description: Returns paginated list of hidden/unpublished posts.
+      parameters:
+      - description: Page number
+        in: query
+        name: page
+        type: integer
+      - description: Items per page
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List hidden posts
+      tags:
+      - Posts
+  /api/posts/images:
+    delete:
+      consumes:
+      - application/json
+      description: Deletes an image from Cloudflare R2 storage.
+      parameters:
+      - description: Image URL to delete
+        in: body
+        name: url
+        required: true
+        schema:
+          type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete an image
+      tags:
+      - Posts
+  /api/posts/images/upload:
+    post:
+      consumes:
+      - multipart/form-data
+      description: Uploads an image to Cloudflare R2 storage.
+      parameters:
+      - description: Image file
+        in: formData
+        name: file
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Upload an image for a post
+      tags:
+      - Posts
+  /api/posts/preview:
+    post:
+      consumes:
+      - application/json
+      description: Saves a temporary preview of post content.
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Save a post preview
+      tags:
+      - Posts
+  /api/posts/preview/{id}:
+    get:
+      description: Retrieves a temporary preview by ID.
+      parameters:
+      - description: Preview ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get a post preview
+      tags:
+      - Posts
+  /api/posts/slug/{slug}:
+    get:
+      consumes:
+      - application/json
+      description: Fetch a single post by its URL slug.
+      parameters:
+      - description: Post Slug
+        in: path
+        name: slug
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/erg_ninja_internal_modules_posts_dto.PostResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/erg_ninja_internal_dto_response.Response'
+      summary: Get post by slug
+      tags:
+      - Posts
+  /api/posts/trash:
+    get:
+      description: Returns paginated list of soft-deleted posts.
+      parameters:
+      - description: Page number
+        in: query
+        name: page
+        type: integer
+      - description: Items per page
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List trashed posts
+      tags:
+      - Posts
+  /api/profiles:
+    post:
+      consumes:
+      - application/json
+      description: Creates a new user profile.
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create profile
+      tags:
+      - Profiles
+  /api/profiles/{userId}:
+    delete:
+      description: Deletes a user profile.
+      parameters:
+      - description: User ID
+        in: path
+        name: userId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete profile
+      tags:
+      - Profiles
+    get:
+      description: Returns a public user profile.
+      parameters:
+      - description: User ID
+        in: path
+        name: userId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get user profile
+      tags:
+      - Profiles
+    put:
+      consumes:
+      - application/json
+      description: Updates a user profile.
+      parameters:
+      - description: User ID
+        in: path
+        name: userId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update profile
+      tags:
+      - Profiles
+  /api/profiles/me:
+    get:
+      description: Returns the current user's profile.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get my profile
+      tags:
+      - Profiles
+  /api/recruitment/admin/candidates:
+    get:
+      description: Returns candidates for a job.
+      parameters:
+      - description: Job ID filter
+        in: query
+        name: jobId
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List candidates
+      tags:
+      - Recruitment Admin
+  /api/recruitment/admin/candidates/{id}/status:
+    patch:
+      consumes:
+      - application/json
+      description: Updates the status of a candidate application.
+      parameters:
+      - description: Candidate ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update candidate status
+      tags:
+      - Recruitment Admin
+  /api/recruitment/apply:
+    post:
+      consumes:
+      - multipart/form-data
+      description: Submit a job application with CV upload.
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Apply for a job
+      tags:
+      - Recruitment
+  /api/recruitment/jobs:
+    get:
+      description: Returns paginated job listings.
+      parameters:
+      - description: Page
+        in: query
+        name: page
+        type: integer
+      - description: Limit
+        in: query
+        name: limit
+        type: integer
+      - description: Search
+        in: query
+        name: search
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: List jobs
+      tags:
+      - Recruitment
+    post:
+      consumes:
+      - application/json
+      description: Creates a new job posting.
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create a job
+      tags:
+      - Recruitment Admin
+  /api/recruitment/jobs/{id}:
+    delete:
+      description: Soft-deletes a job posting.
+      parameters:
+      - description: Job ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete a job
+      tags:
+      - Recruitment Admin
+    put:
+      consumes:
+      - application/json
+      description: Updates an existing job posting.
+      parameters:
+      - description: Job ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update a job
+      tags:
+      - Recruitment Admin
+  /api/recruitment/jobs/{id}/status:
+    patch:
+      consumes:
+      - application/json
+      description: Activates or deactivates a job.
+      parameters:
+      - description: Job ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update job status
+      tags:
+      - Recruitment Admin
+  /api/recruitment/jobs/{id}/toggle-hot:
+    patch:
+      description: Toggles the hot flag on a job.
+      parameters:
+      - description: Job ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Toggle hot flag
+      tags:
+      - Recruitment Admin
+  /api/recruitment/jobs/{id}/toggle-urgent:
+    patch:
+      description: Toggles the urgent flag on a job.
+      parameters:
+      - description: Job ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Toggle urgent flag
+      tags:
+      - Recruitment Admin
+  /api/recruitment/jobs/{slug}:
+    get:
+      description: Returns a job post by its slug.
+      parameters:
+      - description: Job slug
+        in: path
+        name: slug
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get job by slug
+      tags:
+      - Recruitment
+  /api/recruitment/tracking/{code}:
+    get:
+      description: Track a job application by its tracking code.
+      parameters:
+      - description: Tracking code
+        in: path
+        name: code
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Track application
+      tags:
+      - Recruitment
+  /api/reviews:
+    get:
+      consumes:
+      - application/json
+      description: Fetch reviews filtered by target ID and type (e.g. course, post).
+      parameters:
+      - description: Filter by target ID
+        in: query
+        name: targetId
+        type: string
+      - description: Filter by target type
+        in: query
+        name: targetType
+        type: string
+      - description: Page number (default 1)
+        in: query
+        name: page
+        type: integer
+      - description: Limit per page (default 10)
+        in: query
+        name: limit
+        type: integer
+      - description: Sort order (newest|helpful)
+        in: query
+        name: sort
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/erg_ninja_internal_modules_reviews_dto.ReviewListResponse'
+      summary: List reviews
+      tags:
+      - Reviews
+    post:
+      consumes:
+      - application/json
+      description: Submit a new review for a target.
+      parameters:
+      - description: Review Data
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/erg_ninja_internal_modules_reviews_dto.CreateReviewRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/erg_ninja_internal_modules_reviews_dto.ReviewResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/erg_ninja_internal_dto_response.Response'
+      summary: Submit a review
+      tags:
+      - Reviews
+  /api/reviews/{reviewId}/approve:
+    patch:
+      consumes:
+      - application/json
+      description: Mark a review as approved/published.
+      parameters:
+      - description: Review ID
+        in: path
+        name: reviewId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/erg_ninja_internal_modules_reviews_dto.ReviewResponse'
+      security:
+      - BearerAuth: []
+      summary: 'Admin: Approve review'
+      tags:
+      - Reviews Admin
+  /api/reviews/{reviewId}/feature:
+    patch:
+      consumes:
+      - application/json
+      description: Toggle the featured status of a review.
+      parameters:
+      - description: Review ID
+        in: path
+        name: reviewId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 'Admin: Toggle featured review'
+      tags:
+      - Reviews Admin
+  /api/reviews/{reviewId}/helpful:
+    post:
+      consumes:
+      - application/json
+      description: Increment the helpful counter for a review.
+      parameters:
+      - description: Review ID
+        in: path
+        name: reviewId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/erg_ninja_internal_dto_response.Response'
+      summary: Mark review as helpful
+      tags:
+      - Reviews
+  /api/reviews/{reviewId}/reject:
+    patch:
+      consumes:
+      - application/json
+      description: Mark a review as rejected.
+      parameters:
+      - description: Review ID
+        in: path
+        name: reviewId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 'Admin: Reject review'
+      tags:
+      - Reviews Admin
+  /api/reviews/{reviewId}/reply:
+    post:
+      consumes:
+      - application/json
+      description: Post an admin reply to a review.
+      parameters:
+      - description: Review ID
+        in: path
+        name: reviewId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 'Admin: Reply to review'
+      tags:
+      - Reviews Admin
+  /api/reviews/admin/all:
+    get:
+      consumes:
+      - application/json
+      description: Fetch all reviews for management.
+      parameters:
+      - description: Filter by status
+        in: query
+        name: status
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/erg_ninja_internal_modules_reviews_dto.AdminReviewListResponse'
+      security:
+      - BearerAuth: []
+      summary: 'Admin: List all reviews'
+      tags:
+      - Reviews Admin
+  /api/rss/feeds:
+    get:
+      description: Returns a list of configured RSS feeds with optional filtering.
+      parameters:
+      - description: Filter by enabled status
+        in: query
+        name: enabled
+        type: boolean
+      - description: Filter by category
+        in: query
+        name: category
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: List all RSS feeds
+      tags:
+      - Crawler RSS
+    post:
+      consumes:
+      - application/json
+      description: Adds a new RSS feed source to the crawler system.
+      parameters:
+      - description: Feed parameters
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/erg_ninja_internal_modules_crawler_dto.CreateFeedRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/erg_ninja_internal_modules_crawler_dto.FeedResponse'
+      summary: Create a new RSS feed
+      tags:
+      - Crawler RSS
+  /api/rss/feeds/{id}:
+    delete:
+      description: Removes an RSS feed.
+      parameters:
+      - description: Feed ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete RSS feed
+      tags:
+      - Crawler RSS
+    get:
+      description: Returns a single RSS feed by ID.
+      parameters:
+      - description: Feed ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get RSS feed
+      tags:
+      - Crawler RSS
+    put:
+      consumes:
+      - application/json
+      description: Updates an RSS feed configuration.
+      parameters:
+      - description: Feed ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update RSS feed
+      tags:
+      - Crawler RSS
+  /api/rss/feeds/{id}/refresh:
+    post:
+      description: Enqueues a high-priority job to fetch and parse an RSS feed immediately.
+      parameters:
+      - description: Feed ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Force refresh ignoring cache
+        in: query
+        name: force
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Force refresh an RSS feed
+      tags:
+      - Crawler RSS
+  /api/rss/feeds/create-selective:
+    post:
+      consumes:
+      - application/json
+      description: Creates a feed and immediately crawls only the selected links.
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Create RSS feed with selected items
+      tags:
+      - Crawler RSS
+  /api/rss/feeds/peek:
+    get:
+      description: Fetches and parses an RSS feed URL without saving it to the database.
+      parameters:
+      - description: Feed URL
+        in: query
+        name: url
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Peek into an RSS feed URL
+      tags:
+      - Crawler RSS
+  /api/rss/feeds/preview:
+    post:
+      consumes:
+      - application/json
+      description: Fetches and parses a custom RSS URL for preview.
+      parameters:
+      - description: RSS URL
+        in: body
+        name: payload
+        required: true
+        schema:
+          additionalProperties: true
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Preview a custom RSS URL
+      tags:
+      - Crawler RSS
+  /api/rss/feeds/trigger:
+    post:
+      consumes:
+      - application/json
+      description: Triggers an immediate sync for a given feed by ID in body.
+      parameters:
+      - description: Feed ID
+        in: body
+        name: payload
+        required: true
+        schema:
+          additionalProperties: true
+          type: object
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Trigger RSS sync
+      tags:
+      - Crawler RSS
+  /api/seo/404:
+    post:
+      consumes:
+      - application/json
+      description: Manually logs a 404 error for a URL.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Log a manual 404
+      tags:
+      - SEO
+  /api/seo/404-logs:
+    get:
+      description: Returns paginated 404 error log entries.
+      parameters:
+      - description: Page number
+        in: query
+        name: page
+        type: integer
+      - description: Items per page
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List 404 error logs
+      tags:
+      - SEO
+  /api/seo/analyze-draft:
+    post:
+      consumes:
+      - application/json
+      description: Analyzes a draft post's SEO before publishing.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Analyze draft SEO
+      tags:
+      - SEO
+  /api/seo/analyze/{postId}:
+    get:
+      description: Returns SEO analysis for a post.
+      parameters:
+      - description: Post ID
+        in: path
+        name: postId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Analyze a post's SEO
+      tags:
+      - SEO
+  /api/seo/apply-autolinks/{postId}:
+    put:
+      description: Automatically adds internal links to post content.
+      parameters:
+      - description: Post ID
+        in: path
+        name: postId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Apply autolinks
+      tags:
+      - SEO
+  /api/seo/check-duplicate:
+    post:
+      consumes:
+      - application/json
+      description: Checks for duplicate content across posts.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Check content duplication
+      tags:
+      - SEO
+  /api/seo/config/{key}:
+    get:
+      description: Returns value of a specific SEO configuration key.
+      parameters:
+      - description: Config key
+        in: path
+        name: key
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get SEO config
+      tags:
+      - SEO Config
+    put:
+      consumes:
+      - application/json
+      description: Creates or updates an SEO configuration value.
+      parameters:
+      - description: Config key
+        in: path
+        name: key
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Set SEO config
+      tags:
+      - SEO Config
+  /api/seo/dashboard:
+    get:
+      description: Returns aggregated SEO dashboard data.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: SEO Dashboard
+      tags:
+      - SEO
+  /api/seo/dashboard/batch-analyze:
+    post:
+      consumes:
+      - application/json
+      description: Analyzes multiple posts for SEO quality.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Batch analyze posts
+      tags:
+      - SEO
+  /api/seo/generate-alt-texts:
+    post:
+      consumes:
+      - application/json
+      description: Uses AI to generate alt texts for images in content.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Generate image alt texts
+      tags:
+      - SEO AI
+  /api/seo/gsc/{postId}:
+    get:
+      description: Returns Google Search Console metrics for a specific post.
+      parameters:
+      - description: Post ID
+        in: path
+        name: postId
+        required: true
+        type: string
+      - description: Number of days
+        in: query
+        name: days
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get GSC data for a post
+      tags:
+      - SEO GSC
+  /api/seo/gsc/auth/callback:
+    post:
+      description: Exchanges authorization code for GSC tokens.
+      parameters:
+      - description: Authorization code
+        in: query
+        name: code
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: GSC OAuth callback
+      tags:
+      - SEO GSC
+  /api/seo/gsc/auth/url:
+    get:
+      description: Returns OAuth2 URL for Google Search Console authorization.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get GSC auth URL
+      tags:
+      - SEO GSC
+  /api/seo/gsc/sync:
+    get:
+      description: Trigger a sync of GSC data.
+      parameters:
+      - description: Number of days to sync
+        in: query
+        name: days
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Sync Google Search Console data
+      tags:
+      - SEO GSC
+  /api/seo/gsc/top-posts:
+    get:
+      description: Returns top-performing posts from GSC data.
+      parameters:
+      - description: Number of days
+        in: query
+        name: days
+        type: integer
+      - description: Limit
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get top GSC posts
+      tags:
+      - SEO GSC
+  /api/seo/health:
+    get:
+      description: Returns SEO module health status.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: SEO health check
+      tags:
+      - SEO
+  /api/seo/keyword-research:
+    get:
+      description: Returns keyword research data.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Keyword research
+      tags:
+      - SEO Keywords
+  /api/seo/keyword-suggestions:
+    get:
+      description: Returns AI-generated keyword suggestions.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get keyword suggestions
+      tags:
+      - SEO Keywords
+  /api/seo/keywords:
+    get:
+      consumes:
+      - application/json
+      description: Fetch all tracked keywords and their targets.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/erg_ninja_internal_dto_response.Response'
+      security:
+      - BearerAuth: []
+      summary: List SEO keywords
+      tags:
+      - SEO Keywords
+    post:
+      consumes:
+      - application/json
+      description: Start tracking a new keyword for a specific target URL.
+      parameters:
+      - description: Keyword Data
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/internal_modules_seo.CreateKeywordRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_modules_seo.SeoKeyword'
+      security:
+      - BearerAuth: []
+      summary: Add SEO keyword
+      tags:
+      - SEO Keywords
+  /api/seo/keywords/{id}:
+    delete:
+      description: Remove a tracked keyword.
+      parameters:
+      - description: Keyword ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete SEO keyword
+      tags:
+      - SEO Keywords
+  /api/seo/performance:
+    get:
+      description: Returns aggregated SEO performance metrics.
+      parameters:
+      - description: Period (week/month/quarter)
+        in: query
+        name: period
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get SEO performance
+      tags:
+      - SEO
+  /api/seo/performance/queries:
+    get:
+      description: Returns search queries performance data.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get performance queries
+      tags:
+      - SEO
+  /api/seo/posts/{postId}/robots:
+    post:
+      consumes:
+      - application/json
+      description: Updates robots.txt directives for a specific post.
+      parameters:
+      - description: Post ID
+        in: path
+        name: postId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update post robots config
+      tags:
+      - SEO
+  /api/seo/redirects:
+    get:
+      consumes:
+      - application/json
+      description: Fetch all active URL redirection rules.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/erg_ninja_internal_dto_response.Response'
+      security:
+      - BearerAuth: []
+      summary: List URL redirects
+      tags:
+      - SEO Redirects
+    post:
+      consumes:
+      - application/json
+      description: Add a new URL redirection rule.
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create redirect rule
+      tags:
+      - SEO Redirects
+  /api/seo/redirects/{id}:
+    delete:
+      description: Remove a URL redirection rule.
+      parameters:
+      - description: Redirect ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete redirect rule
+      tags:
+      - SEO Redirects
+    put:
+      consumes:
+      - application/json
+      description: Update an existing redirect rule.
+      parameters:
+      - description: Redirect ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update redirect rule
+      tags:
+      - SEO Redirects
+  /api/seo/schema/{postId}:
+    get:
+      consumes:
+      - application/json
+      description: Fetch structured data markup for a specific post.
+      parameters:
+      - description: Post ID
+        in: path
+        name: postId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get JSON-LD Schema
+      tags:
+      - SEO Schema
+    post:
+      consumes:
+      - application/json
+      description: Save structured data markup for a post.
+      parameters:
+      - description: Post ID
+        in: path
+        name: postId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Save JSON-LD schema
+      tags:
+      - SEO Schema
+  /api/seo/schema/{postId}/validate:
+    post:
+      description: Validates structured data markup for a post.
+      parameters:
+      - description: Post ID
+        in: path
+        name: postId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Validate JSON-LD schema
+      tags:
+      - SEO Schema
+  /api/seo/submission/logs:
+    get:
+      description: Returns URL submission history.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List URL submission logs
+      tags:
+      - SEO
+  /api/seo/submission/submit:
+    post:
+      consumes:
+      - application/json
+      description: Submits URLs for indexing.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Submit URLs to search engines
+      tags:
+      - SEO
+  /api/seo/suggest-meta:
+    post:
+      consumes:
+      - application/json
+      description: AI-powered meta title and description suggestions.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Suggest SEO meta tags
+      tags:
+      - SEO AI
+  /api/seo/suggest-titles:
+    post:
+      consumes:
+      - application/json
+      description: AI-powered title suggestions.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Suggest SEO-optimized titles
+      tags:
+      - SEO AI
+  /api/seo/trends/{postId}:
+    get:
+      description: Returns trend data for a specific post.
+      parameters:
+      - description: Post ID
+        in: path
+        name: postId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get post trends
+      tags:
+      - SEO
+  /api/sessions/current:
+    get:
+      description: Returns the current user's active session.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get current session
+      tags:
+      - Sessions
+  /api/trending/feeds:
+    get:
+      description: Returns URLs discovered from trending topics.
+      parameters:
+      - description: Limit
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get discovery feeds
+      tags:
+      - Trending
+  /api/trending/healthz:
+    get:
+      description: Returns trending module health status.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Trending health check
+      tags:
+      - Trending
+  /api/trending/history:
+    get:
+      description: Returns historical trending data.
+      parameters:
+      - description: Limit
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get trending history
+      tags:
+      - Trending
+  /api/trending/news:
+    get:
+      description: Returns latest trending news articles.
+      parameters:
+      - description: Limit
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: List trending news
+      tags:
+      - Trending
+  /api/trending/ready:
+    get:
+      description: Returns trending module readiness with dep checks.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Trending readiness check
+      tags:
+      - Trending
+  /api/trending/refresh:
+    post:
+      description: Triggers a manual refresh of trending data.
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Refresh trending data
+      tags:
+      - Trending
+  /api/trending/sources:
+    get:
+      description: Returns configured trending data sources.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: List trending sources
+      tags:
+      - Trending
+  /api/trending/stats:
+    get:
+      description: Returns discovery statistics for trending module.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/erg_ninja_internal_modules_trending_dto.TrendingStats'
+      summary: Get trending statistics
+      tags:
+      - Trending
+  /api/trending/topics:
+    get:
+      description: Returns current trending topics.
+      parameters:
+      - description: Limit
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: List trending topics
+      tags:
+      - Trending
+  /api/trending/topics/{topic}:
+    get:
+      description: Returns details for a specific trending topic.
+      parameters:
+      - description: Topic slug
+        in: path
+        name: topic
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get trending topic detail
+      tags:
+      - Trending
+  /api/users:
+    get:
+      consumes:
+      - application/json
+      description: Fetch a list of all users in the tenant.
+      parameters:
+      - description: Page number
+        in: query
+        name: page
+        type: integer
+      - description: Items per page
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/erg_ninja_internal_modules_users_dto_response.UserListResponse'
+      security:
+      - BearerAuth: []
+      summary: 'Admin: List users'
+      tags:
+      - Users Admin
+  /api/users/{userID}:
+    delete:
+      description: Permanently deletes a user.
+      parameters:
+      - description: User ID
+        in: path
+        name: userID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 'Admin: Delete a user'
+      tags:
+      - Users Admin
+    get:
+      consumes:
+      - application/json
+      description: Fetch detailed information of a specific user.
+      parameters:
+      - description: User ID
+        in: path
+        name: userID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/erg_ninja_internal_modules_users_dto_response.UserDetailResponse'
+      security:
+      - BearerAuth: []
+      summary: 'Admin: Get user detail'
+      tags:
+      - Users Admin
+  /api/users/{userID}/activity:
+    get:
+      description: Returns activity history for a user (placeholder).
+      parameters:
+      - description: User ID
+        in: path
+        name: userID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 'Admin: Get user activity'
+      tags:
+      - Users Admin
+  /api/users/{userID}/roles:
+    post:
+      consumes:
+      - application/json
+      description: Assigns one or more roles to a user.
+      parameters:
+      - description: User ID
+        in: path
+        name: userID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 'Admin: Assign roles to user'
+      tags:
+      - Users Admin
+  /api/users/{userID}/status:
+    put:
+      consumes:
+      - application/json
+      description: Updates the status (active/banned/suspended) of a user.
+      parameters:
+      - description: User ID
+        in: path
+        name: userID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 'Admin: Update user status'
+      tags:
+      - Users Admin
+  /api/users/bulk-delete:
+    post:
+      consumes:
+      - application/json
+      description: Deletes multiple users at once.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 'Admin: Bulk delete users'
+      tags:
+      - Users Admin
+  /api/users/bulk-status:
+    post:
+      consumes:
+      - application/json
+      description: Updates status for multiple users at once.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 'Admin: Bulk update user status'
+      tags:
+      - Users Admin
+  /api/users/me:
+    get:
+      consumes:
+      - application/json
+      description: Fetch profile details of the currently authenticated user.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/erg_ninja_internal_modules_users_dto_response.UserResponse'
+      security:
+      - BearerAuth: []
+      summary: Get current user profile
+      tags:
+      - Users
+    patch:
+      consumes:
+      - application/json
+      description: Update the profile information of the current user.
+      parameters:
+      - description: Update Data
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/erg_ninja_internal_modules_users_dto_request.UpdateProfileRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update user profile
+      tags:
+      - Users
+  /api/users/me/onboarding:
+    post:
+      consumes:
+      - application/json
+      description: Completes the user's onboarding profile steps.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Complete onboarding
+      tags:
+      - Users
+  /api/users/me/password:
+    put:
+      consumes:
+      - application/json
+      description: Change the current user's password.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Change password
+      tags:
+      - Users
+  /api/users/me/sessions:
+    get:
+      description: Returns all active sessions for the current user.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List user sessions
+      tags:
+      - Users
+  /api/users/me/sessions/{sessionID}:
+    delete:
+      description: Revokes a specific session.
+      parameters:
+      - description: Session ID
+        in: path
+        name: sessionID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Revoke a session
+      tags:
+      - Users
+  /documents:
+    get:
+      description: Returns paginated list of documents.
+      parameters:
+      - description: Cursor
+        in: query
+        name: cursor
+        type: string
+      - description: Limit
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List documents
+      tags:
+      - Documents
+    post:
+      consumes:
+      - multipart/form-data
+      description: Uploads a PDF document with optional watermark.
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Upload document
+      tags:
+      - Documents
+  /documents/{id}:
+    delete:
+      description: Removes a document and its file.
+      parameters:
+      - description: Document ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete document
+      tags:
+      - Documents
+    get:
+      description: Returns a single document by ID.
+      parameters:
+      - description: Document ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get document by ID
+      tags:
+      - Documents
+    patch:
+      consumes:
+      - application/json
+      description: Updates document metadata.
+      parameters:
+      - description: Document ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update document
+      tags:
+      - Documents
+  /documents/{id}/file:
+    get:
+      description: Streams the PDF file with security headers.
+      parameters:
+      - description: Document ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/pdf
+      responses:
+        "200":
+          description: OK
+      security:
+      - BearerAuth: []
+      summary: Stream document file
+      tags:
+      - Documents
+  /healthz:
+    get:
+      description: Returns bot service liveness status.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Bot health check
+      tags:
+      - Bot Health
+  /menus/structure:
+    get:
+      description: Returns the navigation menu tree for a domain.
+      parameters:
+      - description: Domain
+        in: query
+        name: domain
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get menu structure
+      tags:
+      - Menus
+  /ready:
+    get:
+      description: Returns bot service readiness with dependency checks.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Bot readiness check
+      tags:
+      - Bot Health
+  /robots.txt:
+    get:
+      description: Returns the robots.txt file.
+      produces:
+      - text/plain
+      responses:
+        "200":
+          description: OK
+      summary: Get robots.txt
+      tags:
+      - Sitemap
+  /sitemap-{sub}.xml:
+    get:
+      description: Returns a sub-sitemap partition.
+      parameters:
+      - description: Sub partition
+        in: path
+        name: sub
+        required: true
+        type: string
+      produces:
+      - application/xml
+      responses:
+        "200":
+          description: OK
+      summary: Get sub-sitemap
+      tags:
+      - Sitemap
+  /sitemap.xml:
+    get:
+      description: Returns the main sitemap XML.
+      produces:
+      - application/xml
+      responses:
+        "200":
+          description: OK
+      summary: Get sitemap
+      tags:
+      - Sitemap
+  /sitemap/data:
+    get:
+      description: Returns sitemap items in JSON format.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get sitemap data (JSON)
+      tags:
+      - Sitemap
+  /sitemap_index.xml:
+    get:
+      description: Returns the XML sitemap index.
+      produces:
+      - application/xml
+      responses:
+        "200":
+          description: OK
+      summary: Get sitemap index
+      tags:
+      - Sitemap
+  /webhooks/discord:
+    post:
+      consumes:
+      - application/json
+      description: Receives and processes Discord interaction webhooks.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Handle Discord webhook
+      tags:
+      - Bot Webhooks
+  /webhooks/telegram:
+    post:
+      consumes:
+      - application/json
+      description: Receives and processes Telegram webhook updates.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Handle Telegram webhook
+      tags:
+      - Bot Webhooks
+securityDefinitions:
+  BearerAuth:
+    description: Type "Bearer <token>" to authenticate.
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

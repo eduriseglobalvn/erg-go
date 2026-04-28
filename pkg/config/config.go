@@ -3,8 +3,11 @@
 package config
 
 import (
+	"bufio"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -22,10 +25,111 @@ type Config struct {
 	Queue     QueueConfig     `mapstructure:"queue"`
 	Telemetry TelemetryConfig `mapstructure:"telemetry"`
 	Scraper   ScraperConfig   `mapstructure:"scraper"`
+	Trending  TrendingConfig  `mapstructure:"trending"`
 	Ai        AiConfig        `mapstructure:"ai"`
 	Auth      AuthConfig      `mapstructure:"auth"`
 	HTTP      HTTPConfig      `mapstructure:"http"`
 	Logging   LoggingConfig   `mapstructure:"logging"`
+	Discord   DiscordConfig   `mapstructure:"discord"`
+	Telegram  TelegramConfig  `mapstructure:"telegram"`
+	WhatsApp  WhatsAppConfig  `mapstructure:"whatsapp"`
+	SMTP      SMTPConfig      `mapstructure:"smtp"`
+	Bot       BotConfig       `mapstructure:"bot"`
+	Modules   ModulesConfig   `mapstructure:"modules"`
+	Compose   ComposeConfig   `mapstructure:"compose"`
+	Discovery DiscoveryConfig `mapstructure:"discovery"`
+	Tenant    TenantConfig    `mapstructure:"tenant"`
+	R2        R2Config        `mapstructure:"r2"`
+	GDrive    GDriveConfig    `mapstructure:"gdrive"`
+	Analytics AnalyticsConfig `mapstructure:"analytics"`
+}
+
+// DiscoveryConfig holds service discovery settings. Maps to config.yaml "discovery:".
+type DiscoveryConfig struct {
+	Enabled bool          `mapstructure:"enabled"`
+	Backend string        `mapstructure:"backend"` // "static" | "consul" | "dns"
+	Consul  ConsulDiscCfg `mapstructure:"consul"`
+	DNS     DNSDiscCfg    `mapstructure:"dns"`
+	Static  StaticDiscCfg `mapstructure:"static"`
+	TTL     time.Duration `mapstructure:"ttl"` // default TTL for heartbeats
+}
+
+// ConsulDiscCfg holds Consul agent settings for service discovery.
+type ConsulDiscCfg struct {
+	Addr           string        `mapstructure:"addr"`
+	Datacenter     string        `mapstructure:"datacenter"`
+	Token          string        `mapstructure:"token"`
+	HealthInterval time.Duration `mapstructure:"health_check_interval"`
+}
+
+// DNSDiscCfg holds DNS-based service discovery settings.
+type DNSDiscCfg struct {
+	Domain string `mapstructure:"domain"`
+}
+
+// StaticDiscCfg holds static service endpoint configurations for local dev.
+type StaticDiscCfg struct {
+	Services map[string][]StaticDiscEntry `mapstructure:"services"`
+}
+
+// StaticDiscEntry represents a single static service endpoint.
+type StaticDiscEntry struct {
+	Address  string            `mapstructure:"address"`
+	Tags     []string          `mapstructure:"tags"`
+	Metadata map[string]string `mapstructure:"metadata"`
+	Version  string            `mapstructure:"version"`
+}
+
+// TenantConfig holds multi-tenant isolation settings. Maps to config.yaml "tenant:".
+type TenantConfig struct {
+	Enabled     bool                 `mapstructure:"enabled"`
+	Isolation   string               `mapstructure:"isolation"` // "collection" or "field"
+	DefaultID   string               `mapstructure:"default_id"`
+	Definitions map[string]TenantDef `mapstructure:"definitions"`
+}
+
+// R2Config holds Cloudflare R2 (S3-compatible object storage) settings.
+// Maps to config.yaml "r2:".
+type R2Config struct {
+	BucketName   string `mapstructure:"bucket_name"`   // R2 bucket name
+	Endpoint     string `mapstructure:"endpoint"`      // https://<accountid>.r2.cloudflarestorage.com
+	AccessKeyID  string `mapstructure:"access_key_id"` // R2 API token ID
+	SecretKey    string `mapstructure:"secret_key"`    // R2 API token secret
+	PublicDomain string `mapstructure:"public_domain"` // CDN public base URL, e.g. https://pub.example.com
+	Region       string `mapstructure:"region"`        // R2 region, use "auto" by convention
+}
+
+// AnalyticsConfig holds Firebase Analytics sync settings.
+type AnalyticsConfig struct {
+	FirebaseAPIKey string `mapstructure:"firebase_api_key"` // API key for Firebase → erg-go sync
+}
+
+// GDriveConfig holds Google Drive storage settings.
+type GDriveConfig struct {
+	CredentialJSON string `mapstructure:"credential_json"` // Service account JSON (inline or path)
+	FolderID       string `mapstructure:"folder_id"`       // Root folder ID for disclosure docs
+}
+
+// TenantDef defines a single tenant's configuration.
+type TenantDef struct {
+	DisplayName string            `mapstructure:"display_name"`
+	Enabled     bool              `mapstructure:"enabled"`
+	Metadata    map[string]string `mapstructure:"metadata"`
+}
+
+// ModulesConfig holds the plugin/module composition configuration.
+// Phase 4 (task3.md): allows consumers to select which modules to load.
+type ModulesConfig struct {
+	// Enabled lists which modules to register. Valid values: "bot", "crawler",
+	// "notification", "trending". If empty, all 4 modules are loaded (legacy behaviour).
+	Enabled []string `mapstructure:"enabled"`
+}
+
+// ComposeConfig holds config-driven composition settings.
+// Maps to config.yaml "compose:".
+type ComposeConfig struct {
+	Enabled            bool   `mapstructure:"enabled"`
+	DeployManifestPath string `mapstructure:"deploy_manifest_path"`
 }
 
 // AppConfig holds general application settings.
@@ -73,8 +177,10 @@ type MongoDBConfig struct {
 type RedisConfig struct {
 	Host         string        `mapstructure:"host"`
 	Port         int           `mapstructure:"port"`
+	Username     string        `mapstructure:"username"`
 	Password     string        `mapstructure:"password"`
 	DB           int           `mapstructure:"db"`
+	TLS          bool          `mapstructure:"tls"`
 	DialTimeout  time.Duration `mapstructure:"dial_timeout"`
 	ReadTimeout  time.Duration `mapstructure:"read_timeout"`
 	WriteTimeout time.Duration `mapstructure:"write_timeout"`
@@ -85,10 +191,12 @@ type RedisConfig struct {
 
 // QueueConfig holds Asynq queue settings.
 type QueueConfig struct {
+	RedisUsername string        `mapstructure:"redis_username"`
 	RedisHost     string        `mapstructure:"redis_host"`
 	RedisPort     int           `mapstructure:"redis_port"`
 	RedisPassword string        `mapstructure:"redis_password"`
 	RedisDB       int           `mapstructure:"redis_db"`
+	RedisTLS      bool          `mapstructure:"redis_tls"`
 	Concurrency   int           `mapstructure:"concurrency"`
 	RetryDelay    time.Duration `mapstructure:"retry_delay"`
 	MaxRetry      int           `mapstructure:"max_retry"`
@@ -122,35 +230,55 @@ type ScraperConfig struct {
 	ProxyRotateInterval time.Duration `mapstructure:"proxy_rotate_interval"`
 }
 
+// TrendingConfig holds trending aggregation settings.
+type TrendingConfig struct {
+	RefreshCron string        `mapstructure:"refresh_cron"`
+	CacheTTL    time.Duration `mapstructure:"cache_ttl"`
+	FeedLimit   int           `mapstructure:"feed_limit"`
+	TopicsLimit int           `mapstructure:"topics_limit"`
+	NewsLimit   int           `mapstructure:"news_limit"`
+	MinHotScore float64       `mapstructure:"min_hot_score"`
+}
+
 // AiConfig holds AI service settings.
 type AiConfig struct {
 	GeminiAPIKey  string        `mapstructure:"gemini_api_key"`
 	GeminiModel   string        `mapstructure:"gemini_model"`
 	GeminiTimeout time.Duration `mapstructure:"gemini_timeout"`
 	CacheTTL      time.Duration `mapstructure:"cache_ttl"`
-	BatchSize    int           `mapstructure:"batch_size"`
+	BatchSize     int           `mapstructure:"batch_size"`
 }
 
 // AuthConfig holds authentication settings.
 type AuthConfig struct {
-	JWTSecret     string   `mapstructure:"jwt_secret"`
-	JWTPublicKey  string   `mapstructure:"jwt_public_key"`
-	JWTIssuer     string   `mapstructure:"jwt_issuer"`
-	JWTAlgorithms []string `mapstructure:"jwt_algorithms"`
-	BearerPrefix  string   `mapstructure:"bearer_prefix"`
-	SkipPaths     []string `mapstructure:"skip_paths"`
+	JWTSecret          string        `mapstructure:"jwt_secret"`
+	JWTPublicKey       string        `mapstructure:"jwt_public_key"`
+	JWTIssuer          string        `mapstructure:"jwt_issuer"`
+	GoogleBridgeSecret string        `mapstructure:"google_bridge_secret"`
+	JWTAlgorithms      []string      `mapstructure:"jwt_algorithms"`
+	BearerPrefix       string        `mapstructure:"bearer_prefix"`
+	SkipPaths          []string      `mapstructure:"skip_paths"`
+	AccessTokenTTL     time.Duration `mapstructure:"access_token_ttl"`
+	RefreshTokenTTL    time.Duration `mapstructure:"refresh_token_ttl"`
+	Argon2Memory       uint32        `mapstructure:"argon2_memory"`
+	Argon2Iterations   uint32        `mapstructure:"argon2_iterations"`
+	MaxFailedLogin     int           `mapstructure:"max_failed_login"`
+	BlockDuration      time.Duration `mapstructure:"block_duration"`
+	// BootstrapAdmin controls whether a default super-admin account is created on startup.
+	AdminEmail    string `mapstructure:"admin_email"`
+	AdminPassword string `mapstructure:"admin_password"`
 }
 
 // HTTPConfig holds HTTP server settings.
 type HTTPConfig struct {
-	Host            string           `mapstructure:"host"`
-	Port            int              `mapstructure:"port"`
-	ReadTimeout     time.Duration    `mapstructure:"read_timeout"`
-	WriteTimeout    time.Duration    `mapstructure:"write_timeout"`
-	IdleTimeout     time.Duration    `mapstructure:"idle_timeout"`
-	ShutdownTimeout time.Duration    `mapstructure:"shutdown_timeout"`
+	Host            string          `mapstructure:"host"`
+	Port            int             `mapstructure:"port"`
+	ReadTimeout     time.Duration   `mapstructure:"read_timeout"`
+	WriteTimeout    time.Duration   `mapstructure:"write_timeout"`
+	IdleTimeout     time.Duration   `mapstructure:"idle_timeout"`
+	ShutdownTimeout time.Duration   `mapstructure:"shutdown_timeout"`
 	RateLimit       RateLimitConfig `mapstructure:"rate_limit"`
-	CORS            CORSConfig       `mapstructure:"cors"`
+	CORS            CORSConfig      `mapstructure:"cors"`
 }
 
 // RateLimitConfig holds rate limiting settings.
@@ -167,7 +295,7 @@ type CORSConfig struct {
 	AllowedHeaders   []string `mapstructure:"allowed_headers"`
 	ExposedHeaders   []string `mapstructure:"exposed_headers"`
 	AllowCredentials bool     `mapstructure:"allow_credentials"`
-	MaxAge           int       `mapstructure:"max_age"`
+	MaxAge           int      `mapstructure:"max_age"`
 }
 
 // LoggingConfig holds logging settings.
@@ -177,6 +305,51 @@ type LoggingConfig struct {
 	TimeFormat string `mapstructure:"time_format"`
 }
 
+// DiscordConfig holds Discord bot and webhook settings.
+type DiscordConfig struct {
+	Token         string `mapstructure:"token"`          // Bot token (Bot <token>)
+	PublicKey     string `mapstructure:"public_key"`     // Ed25519 public key for webhook verification
+	WebhookSecret string `mapstructure:"webhook_secret"` // HMAC secret for X-Hub-Signature-256 verification
+	WebhookURL    string `mapstructure:"webhook_url"`    // Default Discord webhook URL for notifications
+	GuildID       string `mapstructure:"guild_id"`       // Default guild ID (optional)
+}
+
+// WhatsAppConfig holds WhatsApp Business API settings.
+type WhatsAppConfig struct {
+	PhoneID     string `mapstructure:"phone_id"`     // WhatsApp Business Phone ID
+	AccessToken string `mapstructure:"access_token"` // WhatsApp Business API access token
+	VerifyToken string `mapstructure:"verify_token"` // Webhook verify token
+}
+
+// SMTPConfig holds email SMTP settings.
+type SMTPConfig struct {
+	Host     string `mapstructure:"host"`     // SMTP server host
+	Port     int    `mapstructure:"port"`     // SMTP port (default: 587)
+	Username string `mapstructure:"username"` // SMTP username
+	Password string `mapstructure:"password"` // SMTP password
+	From     string `mapstructure:"from"`     // Sender email address
+	TLS      bool   `mapstructure:"tls"`      // Use TLS (default: true)
+}
+
+// TelegramConfig holds Telegram bot settings.
+type TelegramConfig struct {
+	BotToken      string `mapstructure:"bot_token"`      // Bot API token from @BotFather
+	WebhookSecret string `mapstructure:"webhook_secret"` // HMAC secret for webhook verification
+	WebhookURL    string `mapstructure:"webhook_url"`    // Public webhook URL for Telegram
+}
+
+// BotConfig holds bot-specific settings.
+type BotConfig struct {
+	CommandPrefix       string   `mapstructure:"command_prefix"`       // Default: "/"
+	AdminIDs            []string `mapstructure:"admin_ids"`            // User IDs with admin access
+	AllowedGuilds       []string `mapstructure:"allowed_guilds"`       // Discord guilds allowed to use bot
+	MaxConversations    int      `mapstructure:"max_conversations"`    // Max concurrent conversations
+	WizardTTLMinutes    int      `mapstructure:"wizard_ttl_minutes"`   // Wizard session TTL (default: 5)
+	RateLimitPerUser    int      `mapstructure:"rate_limit_per_user"`  // Max commands per user per minute
+	EnableLinkCommand   bool     `mapstructure:"enable_link_command"`  // Enable account linking command
+	NotificationChannel string   `mapstructure:"notification_channel"` // Discord channel for system notifications
+}
+
 var (
 	globalViper = viper.New()
 	globalCfg   *Config
@@ -184,6 +357,47 @@ var (
 )
 
 const secretPrefix = "SECRET_"
+
+var legacyEnvKeyAliases = map[string]string{
+	"APP_ENV":                     "app.env",
+	"NODE_ENV":                    "app.env",
+	"DB_HOST":                     "database.host",
+	"DB_PORT":                     "database.port",
+	"DB_USER":                     "database.user",
+	"DB_PASSWORD":                 "database.password",
+	"DB_PASS":                     "database.password",
+	"DB_NAME":                     "database.name",
+	"JWT_SECRET":                  "auth.jwt_secret",
+	"JWT_ACCESS_SECRET":           "auth.jwt_secret",
+	"JWT_PUBLIC_KEY":              "auth.jwt_public_key",
+	"JWT_ACCESS_EXPIRATION_TIME":  "auth.access_token_ttl",
+	"JWT_REFRESH_EXPIRATION_TIME": "auth.refresh_token_ttl",
+	"MONGO_URI":                   "mongodb.uri",
+	"MONGO_URL":                   "mongodb.uri",
+	"MONGO_DB":                    "mongodb.database",
+	"MONGO_DB_NAME":               "mongodb.database",
+	"REDIS_HOST":                  "redis.host",
+	"REDIS_PORT":                  "redis.port",
+	"REDIS_PASS":                  "redis.password",
+	"REDIS_PASSWORD":              "redis.password",
+	"MAIL_HOST":                   "smtp.host",
+	"MAIL_PORT":                   "smtp.port",
+	"MAIL_SECURE":                 "smtp.tls",
+	"MAIL_USER":                   "smtp.username",
+	"MAIL_PASSWORD":               "smtp.password",
+	"MAIL_FROM":                   "smtp.from",
+	"R2_ENDPOINT":                 "r2.endpoint",
+	"R2_ACCESS_KEY_ID":            "r2.access_key_id",
+	"R2_SECRET_ACCESS_KEY":        "r2.secret_key",
+	"R2_BUCKET_NAME":              "r2.bucket_name",
+	"R2_PUBLIC_DOMAIN":            "r2.public_domain",
+	"R2_REGION":                   "r2.region",
+	"R2__BUCKET":                  "r2.bucket_name",
+	"R2__SECRET_ACCESS_KEY":       "r2.secret_key",
+	"GEMINI_MODEL":                "ai.gemini_model",
+	"GDRIVE_CREDENTIAL_JSON":      "gdrive.credential_json",
+	"GDRIVE_FOLDER_ID":           "gdrive.folder_id",
+}
 
 // Loader encapsulates Viper configuration options.
 type Loader struct {
@@ -243,34 +457,218 @@ func (l *Loader) Load(out interface{}) error {
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	v.AutomaticEnv()
 
-	// Inject secrets from environment variables with SECRET_ prefix.
-	for _, e := range os.Environ() {
-		if !strings.HasPrefix(e, secretPrefix) {
-			continue
-		}
-		rest := strings.TrimPrefix(e, secretPrefix)
-		parts := strings.SplitN(rest, "=", 2)
-		if len(parts) < 2 {
-			continue
-		}
-		key := strings.ToLower(strings.ReplaceAll(parts[0], "_", "."))
-		v.Set(key, parts[1])
-	}
-
 	if err := v.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
 			return fmt.Errorf("config: read config file: %w", err)
 		}
 	}
 
+	applyEnvOverrides(v, loadDotEnv(l.configPaths))
+	applyEnvOverrides(v, envMapFromEnviron(os.Environ()))
+
 	if err := v.Unmarshal(out); err != nil {
 		return fmt.Errorf("config: unmarshal into struct: %w", err)
 	}
 
+	cfg, ok := out.(*Config)
+	if !ok {
+		return fmt.Errorf("config: expected *Config, got %T", out)
+	}
+	if err := validateConfig(cfg); err != nil {
+		return err
+	}
+
 	globalCfgMu.Lock()
-	globalCfg = out.(*Config)
+	globalCfg = cfg
+	globalViper = v // sync so GetString/GetInt/GetBool helpers read correct values
 	globalCfgMu.Unlock()
 
+	return nil
+}
+
+func applyEnvOverrides(v *viper.Viper, entries map[string]string) {
+	for name, value := range entries {
+		keyName := name
+		if strings.HasPrefix(name, secretPrefix) {
+			keyName = strings.TrimPrefix(name, secretPrefix)
+		}
+
+		if !strings.Contains(keyName, "__") {
+			if _, ok := legacyEnvKeyAliases[strings.ToUpper(keyName)]; !ok && !strings.HasPrefix(name, secretPrefix) {
+				continue
+			}
+		}
+
+		key := normalizeEnvKey(keyName)
+		if key == "" {
+			continue
+		}
+		v.Set(key, normalizeEnvValue(key, value))
+	}
+}
+
+func envMapFromEnviron(environ []string) map[string]string {
+	entries := make(map[string]string, len(environ))
+	for _, e := range environ {
+		parts := strings.SplitN(e, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		entries[parts[0]] = parts[1]
+	}
+	return entries
+}
+
+func loadDotEnv(paths []string) map[string]string {
+	entries := make(map[string]string)
+	seen := make(map[string]struct{}, len(paths))
+
+	for _, dir := range paths {
+		if dir == "" {
+			continue
+		}
+		path := filepath.Join(dir, ".env")
+		if _, ok := seen[path]; ok {
+			continue
+		}
+		seen[path] = struct{}{}
+
+		file, err := os.Open(path)
+		if err != nil {
+			continue
+		}
+
+		scanner := bufio.NewScanner(file)
+		for scanner.Scan() {
+			key, value, ok := parseDotEnvLine(scanner.Text())
+			if !ok {
+				continue
+			}
+			entries[key] = value
+		}
+
+		_ = file.Close()
+	}
+
+	return entries
+}
+
+func parseDotEnvLine(line string) (string, string, bool) {
+	line = strings.TrimSpace(line)
+	if line == "" || strings.HasPrefix(line, "#") {
+		return "", "", false
+	}
+
+	if strings.HasPrefix(line, "export ") {
+		line = strings.TrimSpace(strings.TrimPrefix(line, "export "))
+	}
+
+	idx := strings.IndexRune(line, '=')
+	if idx <= 0 {
+		return "", "", false
+	}
+
+	key := strings.TrimSpace(line[:idx])
+	value := strings.TrimSpace(line[idx+1:])
+	if len(value) >= 2 {
+		if (value[0] == '"' && value[len(value)-1] == '"') || (value[0] == '\'' && value[len(value)-1] == '\'') {
+			value = value[1 : len(value)-1]
+		}
+	}
+
+	return key, value, true
+}
+
+func normalizeEnvKey(name string) string {
+	if name == "" {
+		return ""
+	}
+
+	if alias, ok := legacyEnvKeyAliases[strings.ToUpper(name)]; ok {
+		return alias
+	}
+
+	if strings.Contains(name, "__") {
+		parts := strings.Split(name, "__")
+		normalized := make([]string, 0, len(parts))
+		for i, part := range parts {
+			part = strings.TrimSpace(part)
+			if part == "" {
+				continue
+			}
+			part = strings.ToLower(part)
+			if i == 0 {
+				switch part {
+				case "db":
+					part = "database"
+				case "mongo":
+					part = "mongodb"
+				}
+			}
+			normalized = append(normalized, part)
+		}
+		return strings.Join(normalized, ".")
+	}
+
+	return strings.ToLower(strings.ReplaceAll(name, "_", "."))
+}
+
+func normalizeEnvValue(key, value string) string {
+	if !isDurationLikeKey(key) {
+		return value
+	}
+
+	if len(value) < 2 || !strings.HasSuffix(value, "d") {
+		return value
+	}
+
+	days, err := strconv.Atoi(strings.TrimSuffix(value, "d"))
+	if err != nil {
+		return value
+	}
+
+	return fmt.Sprintf("%dh", days*24)
+}
+
+func isDurationLikeKey(key string) bool {
+	switch {
+	case strings.HasSuffix(key, ".read_timeout"),
+		strings.HasSuffix(key, ".write_timeout"),
+		strings.HasSuffix(key, ".idle_timeout"),
+		strings.HasSuffix(key, ".shutdown_timeout"),
+		strings.HasSuffix(key, ".dial_timeout"),
+		strings.HasSuffix(key, ".connect_timeout"),
+		strings.HasSuffix(key, ".socket_timeout"),
+		strings.HasSuffix(key, ".server_selection_timeout"),
+		strings.HasSuffix(key, ".retry_delay"),
+		strings.HasSuffix(key, ".cache_ttl"),
+		strings.HasSuffix(key, ".access_token_ttl"),
+		strings.HasSuffix(key, ".refresh_token_ttl"),
+		strings.HasSuffix(key, ".conn_max_lifetime"),
+		strings.HasSuffix(key, ".conn_max_idle_time"),
+		strings.HasSuffix(key, ".block_duration"),
+		strings.HasSuffix(key, ".min_delay"),
+		strings.HasSuffix(key, ".max_delay"),
+		strings.HasSuffix(key, ".timeout"),
+		strings.HasSuffix(key, ".health_check_interval"),
+		strings.HasSuffix(key, ".ttl"):
+		return true
+	default:
+		return false
+	}
+}
+
+func validateConfig(cfg *Config) error {
+	if cfg == nil {
+		return fmt.Errorf("config: nil config")
+	}
+	if strings.EqualFold(cfg.App.Env, "production") {
+		for _, origin := range cfg.HTTP.CORS.AllowedOrigins {
+			if origin == "*" {
+				return fmt.Errorf("config: http.cors.allowed_origins cannot contain '*' in production")
+			}
+		}
+	}
 	return nil
 }
 
@@ -358,12 +756,14 @@ func NewDefault() *Config {
 			MinPoolSize:            10,
 			ServerSelectionTimeout: 10 * time.Second,
 			ConnectTimeout:         10 * time.Second,
-			ReadPreference:          "secondaryPreferred",
+			ReadPreference:         "secondaryPreferred",
 		},
 		Redis: RedisConfig{
 			Host:         "localhost",
 			Port:         6379,
+			Username:     "",
 			DB:           0,
+			TLS:          false,
 			DialTimeout:  5 * time.Second,
 			ReadTimeout:  3 * time.Second,
 			WriteTimeout: 3 * time.Second,
@@ -372,12 +772,14 @@ func NewDefault() *Config {
 			MaxRetries:   3,
 		},
 		Queue: QueueConfig{
-			Concurrency: 10,
-			RetryDelay:  10 * time.Second,
-			MaxRetry:    3,
-			RetryBackoff: true,
-			QueueName:    "default",
-			DLQQueueName: "erg-dlq",
+			RedisUsername: "",
+			RedisTLS:      false,
+			Concurrency:   10,
+			RetryDelay:    10 * time.Second,
+			MaxRetry:      3,
+			RetryBackoff:  true,
+			QueueName:     "default",
+			DLQQueueName:  "erg-dlq",
 		},
 		Telemetry: TelemetryConfig{
 			Enabled:        true,
@@ -401,6 +803,14 @@ func NewDefault() *Config {
 			BlockStatusCodes: []int{403, 429},
 			BlockPatterns:    []string{"captcha", "blocked", "access denied"},
 		},
+		Trending: TrendingConfig{
+			RefreshCron: "*/30 * * * *",
+			CacheTTL:    25 * time.Minute,
+			FeedLimit:   100,
+			TopicsLimit: 20,
+			NewsLimit:   20,
+			MinHotScore: 75,
+		},
 		Ai: AiConfig{
 			GeminiModel:   "gemini-2.0-flash",
 			GeminiTimeout: 10 * time.Second,
@@ -408,9 +818,15 @@ func NewDefault() *Config {
 			BatchSize:     10,
 		},
 		Auth: AuthConfig{
-			JWTAlgorithms: []string{"HS256"},
-			BearerPrefix:  "Bearer",
-			SkipPaths:     []string{"/healthz", "/ready", "/metrics"},
+			JWTAlgorithms:    []string{"HS256"},
+			BearerPrefix:     "Bearer",
+			SkipPaths:        []string{"/healthz", "/ready", "/metrics"},
+			AccessTokenTTL:   15 * time.Minute,
+			RefreshTokenTTL:  7 * 24 * time.Hour,
+			Argon2Memory:     65536,
+			Argon2Iterations: 3,
+			MaxFailedLogin:   5,
+			BlockDuration:    15 * time.Minute,
 		},
 		HTTP: HTTPConfig{
 			Host:            "0.0.0.0",
@@ -425,9 +841,9 @@ func NewDefault() *Config {
 				Burst:             20,
 			},
 			CORS: CORSConfig{
-				AllowedOrigins:    []string{"*"},
-				AllowedMethods:    []string{"GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"},
-				AllowedHeaders:    []string{"Accept", "Authorization", "Content-Type", "X-Request-ID"},
+				AllowedOrigins:   []string{"*"},
+				AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"},
+				AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-Request-ID"},
 				AllowCredentials: false,
 				MaxAge:           86400,
 			},
@@ -436,6 +852,34 @@ func NewDefault() *Config {
 			Level:      "debug",
 			Format:     "console",
 			TimeFormat: "RFC3339",
+		},
+		Discord: DiscordConfig{
+			Token: "",
+		},
+		Telegram: TelegramConfig{
+			BotToken: "",
+		},
+		WhatsApp: WhatsAppConfig{},
+		SMTP: SMTPConfig{
+			Port: 587,
+			TLS:  true,
+		},
+		Bot: BotConfig{
+			CommandPrefix:     "/",
+			AdminIDs:          []string{},
+			AllowedGuilds:     []string{},
+			MaxConversations:  10000,
+			WizardTTLMinutes:  5,
+			RateLimitPerUser:  20,
+			EnableLinkCommand: true,
+		},
+		Modules: ModulesConfig{
+			// Enabled is empty by default → all 4 modules loaded (legacy behaviour).
+			// Set in config.yaml to e.g. ["crawler", "notification"] for selective loading.
+			Enabled: []string{},
+		},
+		R2: R2Config{
+			Region: "auto",
 		},
 	}
 }

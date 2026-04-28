@@ -341,6 +341,53 @@ func Run004TrendingIndexes(ctx context.Context, db *mongo.Database) error {
 	return createIndexes(ctx, db, collections)
 }
 
+// Run005NotificationReadIndexes creates indexes for markAsRead + unreadCount queries.
+// These indexes optimize:
+// - CountUnread: COUNT where user_id=X AND read=false
+// - MarkAsRead: UPDATE _id=X where user_id=X
+func Run005NotificationReadIndexes(ctx context.Context, db *mongo.Database) error {
+	collections := []struct {
+		name       string
+		indexes    []mongo.IndexModel
+		indexNames []string
+	}{
+		{
+			name: "notifications",
+			indexes: []mongo.IndexModel{
+				// Optimizes CountUnread(ctx, userID) + List filtering by user_id
+				{
+					Options: options.Index().SetName("idx_user_id"),
+					Keys:    bson.D{{Key: "user_id", Value: 1}},
+				},
+				// Optimizes CountUnread: COUNT WHERE user_id=X AND read=false
+				{
+					Options: options.Index().SetName("idx_user_id_read"),
+					Keys: bson.D{
+						{Key: "user_id", Value: 1},
+						{Key: "read", Value: 1},
+					},
+				},
+				// Optimizes MarkAsRead: UPDATE WHERE _id=X AND user_id=X
+				// (already covered by primary key, but explicit for compound queries)
+				{
+					Options: options.Index().SetName("idx_user_id_created"),
+					Keys: bson.D{
+						{Key: "user_id", Value: 1},
+						{Key: "created_at", Value: -1},
+					},
+				},
+			},
+			indexNames: []string{
+				"idx_user_id",
+				"idx_user_id_read",
+				"idx_user_id_created",
+			},
+		},
+	}
+
+	return createIndexes(ctx, db, collections)
+}
+
 // createIndexes safely creates indexes, ignoring the "already exists" error.
 func createIndexes(ctx context.Context, db *mongo.Database, collections []struct {
 	name       string

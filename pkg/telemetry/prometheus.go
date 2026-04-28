@@ -15,8 +15,8 @@ import (
 // PrometheusRegistry holds all Prometheus metrics for a service.
 type PrometheusRegistry struct {
 	// HTTP metrics.
-	httpRequestsTotal   *prometheus.CounterVec
-	httpRequestDuration *prometheus.HistogramVec
+	httpRequestsTotal    *prometheus.CounterVec
+	httpRequestDuration  *prometheus.HistogramVec
 	httpRequestsInFlight prometheus.Gauge
 
 	// Custom business metrics (service-specific).
@@ -138,8 +138,8 @@ func (r *PrometheusRegistry) NewCounter(name, help string, labels []string) *Cou
 	c := promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: "erg",
-			Name:     name,
-			Help:     help,
+			Name:      name,
+			Help:      help,
 		},
 		labels,
 	)
@@ -166,8 +166,8 @@ func (r *PrometheusRegistry) NewGauge(name, help string, labels []string) *Gauge
 	g := promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: "erg",
-			Name:     name,
-			Help:     help,
+			Name:      name,
+			Help:      help,
 		},
 		labels,
 	)
@@ -202,9 +202,9 @@ func (r *PrometheusRegistry) NewHistogram(name, help string, labels []string, bu
 	h := promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Namespace: "erg",
-			Name:     name,
-			Help:     help,
-			Buckets:  buckets,
+			Name:      name,
+			Help:      help,
+			Buckets:   buckets,
 		},
 		labels,
 	)
@@ -220,10 +220,10 @@ func (h *Histogram) Observe(v float64, labels ...string) {
 
 // CrawlerMetrics holds common crawler-related metrics.
 type CrawlerMetrics struct {
-	PagesCrawled   *Counter
-	CrawlErrors    *Counter
-	CrawlDuration  *Histogram
-	QueueSize      *Gauge
+	PagesCrawled      *Counter
+	CrawlErrors       *Counter
+	CrawlDuration     *Histogram
+	QueueSize         *Gauge
 	ContentDuplicates *Counter
 }
 

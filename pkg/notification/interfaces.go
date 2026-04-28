@@ -34,8 +34,8 @@ const (
 type Notification struct {
 	ID          string                 `json:"id"`
 	Channel     ChannelType            `json:"channel"`
-	Recipient   string                 `json:"recipient"`   // e.g. email address, phone, user ID
-	Subject     string                 `json:"subject"`     // for email
+	Recipient   string                 `json:"recipient"` // e.g. email address, phone, user ID
+	Subject     string                 `json:"subject"`   // for email
 	Body        string                 `json:"body"`
 	HTMLBody    string                 `json:"html_body,omitempty"`
 	Metadata    map[string]interface{} `json:"metadata,omitempty"`
@@ -167,10 +167,10 @@ func pow(base float64, exp int) float64 {
 // DigestNotification bundles multiple notifications into a single digest message.
 type DigestNotification struct {
 	Notifications []Notification `json:"notifications"`
-	Subject       string          `json:"subject"`
-	Summary       string          `json:"summary"`
-	Channel       ChannelType     `json:"channel"`
-	Recipient     string          `json:"recipient"`
+	Subject       string         `json:"subject"`
+	Summary       string         `json:"summary"`
+	Channel       ChannelType    `json:"channel"`
+	Recipient     string         `json:"recipient"`
 }
 
 // DigestProvider is an optional interface for providers that support digest delivery.

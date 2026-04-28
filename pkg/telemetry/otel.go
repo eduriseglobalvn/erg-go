@@ -25,7 +25,7 @@ var Tracer trace.Tracer
 // TracerProvider holds the OpenTelemetry tracer provider with shutdown support.
 type TracerProvider struct {
 	provider *sdktrace.TracerProvider
-	log     *logger.Logger
+	log      *logger.Logger
 }
 
 // NewTracerProvider creates an OpenTelemetry TracerProvider with stdout (or Jaeger) export.

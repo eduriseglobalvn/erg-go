@@ -1,0 +1,219 @@
+syntax = "proto3";
+
+package erg.ninja.lib.crawler.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "erg.ninja/lib/crawler/v1;crawlerv1";
+
+// ── Enums ──────────────────────────────────────────────────────────────────────
+
+enum CrawlStatus {
+  CRAWL_STATUS_UNSPECIFIED = 0;
+  CRAWL_STATUS_PENDING     = 1;
+  CRAWL_STATUS_RUNNING     = 2;
+  CRAWL_STATUS_SUCCESS     = 3;
+  CRAWL_STATUS_FAILED      = 4;
+  CRAWL_STATUS_CANCELED    = 5;
+  CRAWL_STATUS_DUPLICATE   = 6;
+  CRAWL_STATUS_BLACKLISTED = 7;
+}
+
+enum FeedType {
+  FEED_TYPE_UNSPECIFIED = 0;
+  FEED_TYPE_RSS          = 1;
+  FEED_TYPE_ATOM        = 2;
+  FEED_TYPE_JSON        = 3;
+}
+
+enum Priority {
+  PRIORITY_UNSPECIFIED = 0;
+  PRIORITY_LOW         = 1;
+  PRIORITY_NORMAL      = 2;
+  PRIORITY_HIGH        = 3;
+}
+
+// ── Messages ───────────────────────────────────────────────────────────────────
+
+message CrawlURLRequest {
+  string   url          = 1;
+  string   tenant_id    = 2;  // required: multi-tenancy isolation
+  Priority priority     = 3;   // default: PRIORITY_NORMAL
+  bool     fetch_content = 4;  // fetch full HTML content
+  bool     ai_enrich    = 5;  // run AI content quality scoring
+  string   feed_id      = 6;   // optional: associate with RSS feed
+  string   user_id      = 7;   // optional: initiating user
+  int32    depth        = 8;   // crawl depth (0 = single page)
+}
+
+message CrawlURLResponse {
+  string                     job_id     = 1;
+  CrawlStatus                status     = 2;
+  google.protobuf.Timestamp  created_at = 3;
+  string                     message    = 4;
+}
+
+message GetCrawlStatusRequest {
+  string job_id   = 1;
+  string tenant_id = 2;
+}
+
+message CrawlStatusResponse {
+  string                     job_id       = 1;
+  CrawlStatus                status       = 2;
+  int32                      http_status  = 3;
+  int64                      response_size = 4;
+  int64                      duration_ms  = 5;
+  double                     quality_score = 6;
+  string                     title        = 7;
+  string                     description  = 8;
+  repeated string            tags         = 9;
+  string                     language     = 10;
+  google.protobuf.Timestamp  crawled_at   = 11;
+  string                     error_msg    = 12;
+  google.protobuf.Timestamp  created_at   = 13;
+}
+
+message ListFeedsRequest {
+  string  tenant_id  = 1;
+  string  category   = 2;  // optional filter
+  string  language   = 3;  // optional filter
+  bool    enabled_only = 4;
+  int32   page_size   = 5;
+  string  page_token  = 6;
+}
+
+message Feed {
+  string                     id           = 1;
+  string                     name         = 2;
+  string                     url          = 3;
+  FeedType                   feed_type    = 4;
+  string                     category     = 5;
+  string                     language     = 6;
+  string                     frequency    = 7;   // "5m","15m","1h","6h","daily"
+  bool                       enabled      = 8;
+  google.protobuf.Timestamp  last_fetch_at = 9;
+  google.protobuf.Timestamp  last_item_at  = 10;
+  int32                      item_count   = 11;
+  int32                      error_count  = 12;
+  string                     last_error   = 13;
+  google.protobuf.Timestamp  created_at   = 14;
+  google.protobuf.Timestamp  updated_at   = 15;
+}
+
+message ListFeedsResponse {
+  repeated Feed  feeds       = 1;
+  string         next_page_token = 2;
+  int32          total_count     = 3;
+}
+
+message RefreshFeedRequest {
+  string  feed_id    = 1;
+  string  tenant_id  = 2;
+  bool    force      = 3;   // bypass schedule check
+}
+
+message RefreshFeedResponse {
+  string                     job_id        = 1;
+  int32                      new_items     = 2;
+  google.protobuf.Timestamp  refreshed_at  = 3;
+  string                     message       = 4;
+}
+
+message GetStatsRequest {
+  string tenant_id = 1;
+}
+
+message StatsResponse {
+  int32  total_feeds           = 1;
+  int32  enabled_feeds        = 2;
+  int32  total_crawls          = 3;
+  int32  pending_crawls        = 4;
+  int32  success_crawls        = 5;
+  int32  failed_crawls         = 6;
+  int32  duplicate_crawls      = 7;
+  int32  blacklist_blocks      = 8;
+  int64  total_bytes_fetched   = 9;
+  int64  avg_duration_ms       = 10;
+  google.protobuf.Timestamp  last_refresh_at = 11;
+}
+
+message StopCrawlRequest {
+  string job_id    = 1;
+  string tenant_id = 2;
+}
+
+message StopCrawlResponse {
+  bool   stopped  = 1;
+  string message  = 2;
+}
+
+message CrawlHistoryRequest {
+  string  tenant_id   = 1;
+  string  feed_id     = 2;
+  CrawlStatus status = 3;
+  int32   page_size   = 4;
+  string  page_token  = 5;
+}
+
+message CrawlHistoryItem {
+  string                     id            = 1;
+  string                     url           = 2;
+  string                     feed_id       = 3;
+  CrawlStatus                status        = 4;
+  int32                      http_status   = 5;
+  int64                      response_size = 6;
+  int64                      duration_ms   = 7;
+  double                     quality_score = 8;
+  string                     title         = 9;
+  repeated string            tags          = 10;
+  string                     language      = 11;
+  google.protobuf.Timestamp  crawled_at    = 12;
+}
+
+message CrawlHistoryResponse {
+  repeated CrawlHistoryItem items          = 1;
+  string                    next_page_token = 2;
+  int32                     total_count    = 3;
+}
+
+message ReindexRequest {
+  string tenant_id  = 1;
+  string algorithm  = 2;  // "simhash"|"sha256"|"all"
+  string since      = 3;  // ISO timestamp, optional
+  int32  batch_size = 4;
+}
+
+message ReindexResponse {
+  string                     job_id        = 1;
+  google.protobuf.Timestamp  started_at    = 2;
+  string                     message       = 3;
+}
+
+// ── Service ────────────────────────────────────────────────────────────────────
+
+service CrawlerService {
+  // Submit a URL for crawling
+  rpc CrawlURL(CrawlURLRequest) returns (CrawlURLResponse);
+
+  // Check the status of a crawl job
+  rpc GetCrawlStatus(GetCrawlStatusRequest) returns (CrawlStatusResponse);
+
+  // List all monitored RSS/Atom/JSON feeds
+  rpc ListFeeds(ListFeedsRequest) returns (ListFeedsResponse);
+
+  // Force-refresh a feed, enqueuing new items
+  rpc RefreshFeed(RefreshFeedRequest) returns (RefreshFeedResponse);
+
+  // Get aggregate crawler statistics
+  rpc GetStats(GetStatsRequest) returns (StatsResponse);
+
+  // Cancel a running or pending crawl job
+  rpc StopCrawl(StopCrawlRequest) returns (StopCrawlResponse);
+
+  // Get crawl history for a tenant
+  rpc GetCrawlHistory(CrawlHistoryRequest) returns (CrawlHistoryResponse);
+
+  // Trigger reindexing of content fingerprints
+  rpc Reindex(ReindexRequest) returns (ReindexResponse);
+}

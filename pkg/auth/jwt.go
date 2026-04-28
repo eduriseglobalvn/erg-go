@@ -1,4 +1,6 @@
-// Package auth provides JWT validation with HMAC and RSA support.
+// Package auth provides JWT validation and token generation for erg-server.
+// It supports HMAC-SHA256 and RSA-SHA256 algorithms, token refresh,
+// and session-based auth flows.
 package auth
 
 import (
@@ -10,17 +12,16 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-
-	"erg.ninja/pkg/config"
 )
+
+// ─── JWT Validator ───────────────────────────────────────────────────────────────
 
 // JWTValidator validates JWT tokens using HMAC-SHA256 or RS256.
 type JWTValidator struct {
-	secretKey  []byte                 // for HS256
-	publicKey  *rsa.PublicKey         // for RS256
+	secretKey  []byte
+	publicKey  *rsa.PublicKey
 	algorithms []string
 	issuer     string
-	log        *struct{ Debug func(...any) }
 }
 
 // JWTClaims represents the standard claims extracted from a JWT.
@@ -28,6 +29,7 @@ type JWTClaims struct {
 	UserID      string   `json:"user_id,omitempty"`
 	Subject     string   `json:"sub,omitempty"`
 	Email       string   `json:"email,omitempty"`
+	SessionID   string   `json:"session_id,omitempty"`
 	Permissions []string `json:"permissions,omitempty"`
 	Roles       []string `json:"roles,omitempty"`
 	jwt.RegisteredClaims
@@ -38,9 +40,7 @@ type ValidatorOption func(*JWTValidator)
 
 // WithJWTIssuer sets the expected JWT issuer claim.
 func WithJWTIssuer(issuer string) ValidatorOption {
-	return func(v *JWTValidator) {
-		v.issuer = issuer
-	}
+	return func(v *JWTValidator) { v.issuer = issuer }
 }
 
 // NewHS256Validator creates a validator for HMAC-SHA256 signed tokens.
@@ -58,32 +58,31 @@ func NewHS256Validator(secret string, opts ...ValidatorOption) (*JWTValidator, e
 	return v, nil
 }
 
-// NewRS256Validator creates a validator for RSA-SHA256 signed tokens using a PEM-encoded public key.
+// NewRS256Validator creates a validator for RSA-SHA256 signed tokens.
 func NewRS256Validator(pemKey string, opts ...ValidatorOption) (*JWTValidator, error) {
 	if pemKey == "" {
 		return nil, fmt.Errorf("auth: RSA public key cannot be empty")
 	}
-
 	block, _ := pem.Decode([]byte(pemKey))
 	if block == nil {
-		return nil, fmt.Errorf("auth: failed to decode PEM block containing public key")
+		return nil, fmt.Errorf("auth: failed to decode PEM block")
 	}
-
 	pub, err := x509.ParsePKIXPublicKey(block.Bytes)
 	if err != nil {
-		// Try parsing as PKCS1 RSA public key.
 		rsaPub, err2 := x509.ParsePKCS1PublicKey(block.Bytes)
 		if err2 != nil {
-			return nil, fmt.Errorf("auth: parse public key: %w (also tried PKCS1: %v)", err, err2)
+			pkixErr := err
+			pkcs1Err := err2
+			var wrapErr error = pkixErr
+			_ = wrapErr
+			return nil, fmt.Errorf("auth: parse RSA public key — tried PKIX: %v, PKCS1: %v: %w", pkixErr, pkcs1Err, wrapErr)
 		}
 		pub = rsaPub
 	}
-
 	rsaPub, ok := pub.(*rsa.PublicKey)
 	if !ok {
 		return nil, fmt.Errorf("auth: public key is not RSA")
 	}
-
 	v := &JWTValidator{
 		publicKey:  rsaPub,
 		algorithms: []string{"RS256"},
@@ -95,35 +94,24 @@ func NewRS256Validator(pemKey string, opts ...ValidatorOption) (*JWTValidator, e
 }
 
 // NewValidatorFromConfig creates a JWTValidator from the application config.
-func NewValidatorFromConfig(cfg config.AuthConfig) (*JWTValidator, error) {
-	var v *JWTValidator
-	var err error
-
-	if contains(cfg.JWTAlgorithms, "RS256") && cfg.JWTPublicKey != "" {
-		v, err = NewRS256Validator(cfg.JWTPublicKey)
-	} else if contains(cfg.JWTAlgorithms, "HS256") && cfg.JWTSecret != "" {
-		v, err = NewHS256Validator(cfg.JWTSecret)
-	} else if cfg.JWTSecret != "" {
-		v, err = NewHS256Validator(cfg.JWTSecret)
-	} else {
-		return nil, fmt.Errorf("auth: no JWT algorithm configured (set jwt_secret or jwt_public_key)")
+func NewValidatorFromConfig(cfg struct {
+	JWTSecret     string
+	JWTPublicKey  string
+	JWTIssuer     string
+	JWTAlgorithms []string
+}) (*JWTValidator, error) {
+	if len(cfg.JWTAlgorithms) > 0 && cfg.JWTAlgorithms[0] == "RS256" && cfg.JWTPublicKey != "" {
+		return NewRS256Validator(cfg.JWTPublicKey, WithJWTIssuer(cfg.JWTIssuer))
 	}
-	if err != nil {
-		return nil, err
+	if cfg.JWTSecret != "" {
+		return NewHS256Validator(cfg.JWTSecret, WithJWTIssuer(cfg.JWTIssuer))
 	}
-
-	if cfg.JWTIssuer != "" {
-		opt := WithJWTIssuer(cfg.JWTIssuer)
-		opt(v)
-	}
-
-	return v, nil
+	return nil, fmt.Errorf("auth: no JWT algorithm configured (set jwt_secret or jwt_public_key)")
 }
 
-// Validate parses and validates a JWT token string, returning the claims on success.
+// Validate parses and validates a JWT token string.
 func (v *JWTValidator) Validate(tokenString string) (*JWTClaims, error) {
 	tokenString = strings.TrimSpace(tokenString)
-
 	var keyFunc jwt.Keyfunc
 	if len(v.secretKey) > 0 {
 		keyFunc = func(token *jwt.Token) (interface{}, error) {
@@ -142,57 +130,44 @@ func (v *JWTValidator) Validate(tokenString string) (*JWTClaims, error) {
 	} else {
 		return nil, fmt.Errorf("auth: no key configured")
 	}
-
 	token, err := jwt.ParseWithClaims(tokenString, &JWTClaims{}, keyFunc)
 	if err != nil {
 		return nil, fmt.Errorf("auth: parse token: %w", err)
 	}
-
 	claims, ok := token.Claims.(*JWTClaims)
 	if !ok || !token.Valid {
 		return nil, fmt.Errorf("auth: invalid token claims")
 	}
-
-	// Validate issuer if configured.
 	if v.issuer != "" {
 		issuer, err := claims.GetIssuer()
 		if err != nil || issuer != v.issuer {
 			return nil, fmt.Errorf("auth: invalid issuer: got %q, want %q", issuer, v.issuer)
 		}
 	}
-
-	// Check expiration.
 	exp, err := claims.GetExpirationTime()
 	if err == nil && exp != nil && exp.Before(time.Now()) {
 		return nil, fmt.Errorf("auth: token expired at %v", exp.Time)
 	}
-
-	// Normalize user ID from subject if user_id is not set.
 	if claims.UserID == "" {
 		claims.UserID = claims.Subject
 	}
-
 	return claims, nil
 }
 
-// isAllowedAlgorithm checks if the token's algorithm is in the allowed list.
 func (v *JWTValidator) isAllowedAlgorithm(token *jwt.Token) bool {
-	alg := token.Method.Alg()
 	for _, a := range v.algorithms {
-		if a == alg {
+		if a == token.Method.Alg() {
 			return true
 		}
 	}
 	return false
 }
 
-// GenerateHS256 generates a new HS256-signed JWT token with the given claims.
-// This is useful for testing and for generating tokens in the auth service.
+// GenerateHS256 generates a new HS256-signed JWT token.
 func (v *JWTValidator) GenerateHS256(claims *JWTClaims, expiry time.Duration) (string, error) {
 	if len(v.secretKey) == 0 {
 		return "", fmt.Errorf("auth: cannot generate with HS256 validator: no secret key")
 	}
-
 	if claims.Subject == "" && claims.UserID != "" {
 		claims.Subject = claims.UserID
 	}
@@ -200,20 +175,11 @@ func (v *JWTValidator) GenerateHS256(claims *JWTClaims, expiry time.Duration) (s
 	claims.IssuedAt = jwt.NewNumericDate(now)
 	claims.ExpiresAt = jwt.NewNumericDate(now.Add(expiry))
 	claims.NotBefore = jwt.NewNumericDate(now)
-
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString(v.secretKey)
 }
 
-// GenerateRS256 generates a new RS256-signed JWT token.
-// Requires the private key to be set (not available in validator).
-// For token generation, use a separate key management service.
-func (v *JWTValidator) GenerateRS256(_ *JWTClaims, _ time.Duration) (string, error) {
-	return "", fmt.Errorf("auth: RS256 token generation requires the private key; use a separate KMS")
-}
-
-// ValidateRequest is a convenience method that extracts and validates a token
-// from an Authorization header string (e.g. "Bearer <token>").
+// ValidateRequest extracts and validates a token from an Authorization header string.
 func (v *JWTValidator) ValidateRequest(authHeader string) (*JWTClaims, error) {
 	parts := strings.SplitN(authHeader, " ", 2)
 	if len(parts) != 2 {
@@ -233,4 +199,148 @@ func contains(slice []string, substr string) bool {
 		}
 	}
 	return false
+}
+
+// SessionIDFromClaims extracts the session ID from the Permissions slice.
+func SessionIDFromClaims(c *JWTClaims) string {
+	if c == nil {
+		return ""
+	}
+	if c.SessionID != "" {
+		return c.SessionID
+	}
+	if len(c.Permissions) > 0 {
+		return c.Permissions[0]
+	}
+	return ""
+}
+
+// ─── Token Generation ────────────────────────────────────────────────────────────
+
+// TokenPair holds an access token and its associated refresh token.
+type TokenPair struct {
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token"`
+	ExpiresIn    int64  `json:"expires_in"` // access token TTL in seconds
+	TokenType    string `json:"token_type"`
+}
+
+// AuthServiceProvider bundles JWT generation dependencies.
+type AuthServiceProvider struct {
+	accessSecret  []byte
+	refreshSecret []byte
+	accessExpiry  time.Duration
+	refreshExpiry time.Duration
+	issuer        string
+}
+
+// AuthProviderOption configures an AuthServiceProvider.
+type AuthProviderOption func(*AuthServiceProvider)
+
+// WithAccessExpiry sets the access token TTL.
+func WithAccessExpiry(d time.Duration) AuthProviderOption {
+	return func(p *AuthServiceProvider) { p.accessExpiry = d }
+}
+
+// WithRefreshExpiry sets the refresh token TTL.
+func WithRefreshExpiry(d time.Duration) AuthProviderOption {
+	return func(p *AuthServiceProvider) { p.refreshExpiry = d }
+}
+
+// WithIssuer sets the issuer claim for newly minted tokens.
+func WithIssuer(issuer string) AuthProviderOption {
+	return func(p *AuthServiceProvider) { p.issuer = issuer }
+}
+
+// NewAuthServiceProvider creates a new provider from secret strings.
+// Falls back to sensible defaults (15m access, 7d refresh).
+func NewAuthServiceProvider(accessSecret, refreshSecret string, opts ...AuthProviderOption) *AuthServiceProvider {
+	if accessSecret == "" {
+		accessSecret = "dev-access-secret-change-in-production"
+	}
+	if refreshSecret == "" {
+		refreshSecret = "dev-refresh-secret-change-in-production"
+	}
+	p := &AuthServiceProvider{
+		accessSecret:  []byte(accessSecret),
+		refreshSecret: []byte(refreshSecret),
+		accessExpiry:  15 * time.Minute,
+		refreshExpiry: 7 * 24 * time.Hour,
+		issuer:        "erg-server",
+	}
+	for _, o := range opts {
+		o(p)
+	}
+	return p
+}
+
+// IssuePair creates a new access + refresh token pair for the given claims.
+func (p *AuthServiceProvider) IssuePair(sessionID, userID, email string, roles []string, perms []string) (*TokenPair, error) {
+	now := time.Now()
+	atClaims := &JWTClaims{
+		UserID:      userID,
+		Email:       email,
+		SessionID:   sessionID,
+		Roles:       roles,
+		Permissions: append([]string(nil), perms...),
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   userID,
+			Issuer:    p.tokenIssuer(),
+			IssuedAt:  jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(now.Add(p.accessExpiry)),
+		},
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, atClaims)
+	atSigned, err := token.SignedString(p.accessSecret)
+	if err != nil {
+		return nil, fmt.Errorf("auth: sign access token: %w", err)
+	}
+	rtClaims := &JWTClaims{
+		UserID:    userID,
+		SessionID: sessionID,
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   userID,
+			Issuer:    p.tokenIssuer(),
+			IssuedAt:  jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(now.Add(p.refreshExpiry)),
+		},
+	}
+	rtToken := jwt.NewWithClaims(jwt.SigningMethodHS256, rtClaims)
+	rtSigned, err := rtToken.SignedString(p.refreshSecret)
+	if err != nil {
+		return nil, fmt.Errorf("auth: sign refresh token: %w", err)
+	}
+	return &TokenPair{
+		AccessToken:  atSigned,
+		RefreshToken: rtSigned,
+		ExpiresIn:    int64(p.accessExpiry.Seconds()),
+		TokenType:    "Bearer",
+	}, nil
+}
+
+func (p *AuthServiceProvider) tokenIssuer() string {
+	if strings.TrimSpace(p.issuer) == "" {
+		return "erg-server"
+	}
+	return p.issuer
+}
+
+// ValidateAccessToken validates an access token and returns its claims.
+func (p *AuthServiceProvider) ValidateAccessToken(tokenString string) (*JWTClaims, error) {
+	v, err := NewHS256Validator(string(p.accessSecret))
+	if err != nil {
+		return nil, err
+	}
+	v.issuer = p.tokenIssuer()
+	return v.Validate(strings.TrimSpace(tokenString))
+}
+
+// ValidateRefreshToken validates a refresh token (uses refresh secret).
+func (p *AuthServiceProvider) ValidateRefreshToken(tokenString string) (*JWTClaims, error) {
+	v, err := NewHS256Validator(string(p.refreshSecret))
+	if err != nil {
+		return nil, err
+	}
+	v.issuer = p.tokenIssuer()
+	return v.Validate(strings.TrimSpace(tokenString))
 }

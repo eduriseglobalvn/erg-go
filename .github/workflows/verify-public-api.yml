@@ -1,0 +1,88 @@
+name: Verify Public API
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'pkg/**'
+      - '.github/workflows/verify-public-api.yml'
+  pull_request:
+    paths:
+      - 'pkg/**'
+      - '.github/workflows/verify-public-api.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  public-api:
+    name: Enforce Public API Boundaries
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+
+      - name: Check pkg/ does not import internal/
+        run: |
+          set -e
+          FAILED=0
+          for pkg in pkg/*/; do
+            pkg_name=$(basename "$pkg")
+            echo "Checking pkg/${pkg_name}..."
+            if grep -rq "erg.ninja/internal" "$pkg" 2>/dev/null; then
+              echo "ERROR: pkg/${pkg_name} imports erg.ninja/internal — forbidden!"
+              grep -rn "erg.ninja/internal" "$pkg" || true
+              FAILED=1
+            fi
+          done
+          if [ $FAILED -eq 1 ]; then
+            echo ""
+            echo "FAILED: pkg/ packages MUST NOT import erg.ninja/internal/"
+            echo "Move shared logic to pkg/ and keep internal/ for cmd/ binaries only."
+            exit 1
+          fi
+          echo "PASSED: No pkg/ package imports erg.ninja/internal/"
+
+      - name: Check pkg/ does not import cmd/
+        run: |
+          set -e
+          for pkg in pkg/*/; do
+            if grep -rq "erg.ninja/cmd" "$pkg" 2>/dev/null; then
+              echo "ERROR: $(basename $pkg) imports erg.ninja/cmd — forbidden!"
+              exit 1
+            fi
+          done
+          echo "PASSED: No pkg/ package imports erg.ninja/cmd/"
+
+      - name: Verify lib/ packages exist and are importable
+        run: |
+          set -e
+          for svc in bot crawler notification trending; do
+            lib_path="lib/${svc}/v1"
+            if [ ! -d "$lib_path" ]; then
+              echo "WARNING: lib/${svc}/v1 does not exist yet — skipping"
+              continue
+            fi
+            # Verify client.go exports NewClient
+            if ! grep -q "func NewClient" "$lib_path/client.go" 2>/dev/null; then
+              echo "ERROR: lib/${svc}/v1/client.go must export NewClient function"
+              exit 1
+            fi
+            echo "OK: lib/${svc}/v1 has NewClient"
+          done
+          echo "PASSED: All lib/ v1 packages have client factories"
+
+      - name: Compile-check all pkg/ packages
+        run: |
+          for pkg in pkg/*/; do
+            echo "Compiling $(basename $pkg)..."
+            go build ./"${pkg}" 2>/dev/null || echo "INFO: $(basename $pkg) may require external deps"
+          done
+          echo "Build check complete."

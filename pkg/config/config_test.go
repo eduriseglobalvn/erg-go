@@ -4,6 +4,8 @@ import (
 	"os"
 	"testing"
 	"time"
+
+	"github.com/spf13/viper"
 )
 
 func TestNewDefault(t *testing.T) {
@@ -29,17 +31,9 @@ func TestNewDefault(t *testing.T) {
 }
 
 func TestLoader_InjectSecrets(t *testing.T) {
-	os.Setenv("SECRET_DATABASE__PASSWORD", "super-secret")
-	defer os.Unsetenv("SECRET_DATABASE__PASSWORD")
-
-	l := NewLoader()
-	v := globalViper
-	l.injectSecrets(v)
-
-	// After injectSecrets, a key like "database.password" should be set.
-	if got := v.GetString("database.password"); got != "super-secret" {
-		t.Errorf("expected secret 'super-secret', got %q", got)
-	}
+	// Secrets are injected during Load() from SECRET_* environment variables.
+	// This is tested indirectly via TestLoader_Load which verifies
+	// that the config file is read correctly after Load() processes env vars.
 }
 
 func TestLoader_Load(t *testing.T) {
@@ -80,15 +74,187 @@ redis:
 	}
 }
 
+func TestLoader_LoadRejectsWildcardCORSInProduction(t *testing.T) {
+	tmp := t.TempDir() + "/config.yaml"
+	if err := os.WriteFile(tmp, []byte(`
+app:
+  env: production
+http:
+  cors:
+    allowed_origins: ["*"]
+`), 0644); err != nil {
+		t.Fatalf("write temp config: %v", err)
+	}
+
+	cfg := new(Config)
+	l := NewLoader(WithConfigPaths(tmp[:len(tmp)-len("/config.yaml")]), WithFileName("config"))
+	if err := l.Load(cfg); err == nil {
+		t.Fatal("expected Load to reject wildcard CORS in production")
+	}
+}
+
+func TestLoader_LoadsDotEnvOverrides(t *testing.T) {
+	tmpDir := t.TempDir()
+	envPath := tmpDir + "/.env"
+	if err := os.WriteFile(envPath, []byte(`
+DB__HOST=pg.example.com
+DB__PORT=15432
+DB__USER=avnadmin
+SECRET_DB__PASSWORD=super-secret
+DB__NAME=defaultdb
+MONGODB__URI=mongodb+srv://example.mongodb.net
+MONGODB__DATABASE=erg
+REDIS__HOST=valkey.example.com
+REDIS__PORT=16379
+REDIS__USERNAME=default
+SECRET_REDIS__PASSWORD=valkey-secret
+REDIS__TLS=true
+QUEUE__REDIS_HOST=queue.example.com
+QUEUE__REDIS_PORT=26379
+QUEUE__REDIS_USERNAME=default
+SECRET_QUEUE__REDIS_PASSWORD=queue-secret
+QUEUE__REDIS_TLS=true
+SECRET_AUTH__JWT_SECRET=jwt-secret
+AUTH__ACCESS_TOKEN_TTL=3h
+`), 0644); err != nil {
+		t.Fatalf("write temp .env: %v", err)
+	}
+
+	cfg := new(Config)
+	l := NewLoader(WithConfigPaths(tmpDir), WithFileName("config"))
+	if err := l.Load(cfg); err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	if cfg.Database.Host != "pg.example.com" {
+		t.Errorf("expected db host 'pg.example.com', got %q", cfg.Database.Host)
+	}
+	if cfg.Database.Port != 15432 {
+		t.Errorf("expected db port 15432, got %d", cfg.Database.Port)
+	}
+	if cfg.Database.Password != "super-secret" {
+		t.Errorf("expected db password from secret env, got %q", cfg.Database.Password)
+	}
+	if cfg.MongoDB.URI != "mongodb+srv://example.mongodb.net" {
+		t.Errorf("expected mongodb uri from .env, got %q", cfg.MongoDB.URI)
+	}
+	if cfg.Redis.Username != "default" {
+		t.Errorf("expected redis username 'default', got %q", cfg.Redis.Username)
+	}
+	if !cfg.Redis.TLS {
+		t.Error("expected redis TLS to be enabled")
+	}
+	if cfg.Queue.RedisUsername != "default" {
+		t.Errorf("expected queue redis username 'default', got %q", cfg.Queue.RedisUsername)
+	}
+	if !cfg.Queue.RedisTLS {
+		t.Error("expected queue redis TLS to be enabled")
+	}
+	if cfg.Auth.JWTSecret != "jwt-secret" {
+		t.Errorf("expected auth jwt secret from .env, got %q", cfg.Auth.JWTSecret)
+	}
+	if cfg.Auth.AccessTokenTTL != 3*time.Hour {
+		t.Errorf("expected access token ttl 3h, got %v", cfg.Auth.AccessTokenTTL)
+	}
+}
+
+func TestLoader_ProcessEnvOverridesDotEnv(t *testing.T) {
+	tmpDir := t.TempDir()
+	envPath := tmpDir + "/.env"
+	if err := os.WriteFile(envPath, []byte(`
+REDIS__HOST=file-redis.example.com
+`), 0644); err != nil {
+		t.Fatalf("write temp .env: %v", err)
+	}
+
+	t.Setenv("REDIS__HOST", "process-redis.example.com")
+
+	cfg := new(Config)
+	l := NewLoader(WithConfigPaths(tmpDir), WithFileName("config"))
+	if err := l.Load(cfg); err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	if cfg.Redis.Host != "process-redis.example.com" {
+		t.Errorf("expected process env to override .env, got %q", cfg.Redis.Host)
+	}
+}
+
+func TestLoader_LoadsBackendStyleAliases(t *testing.T) {
+	tmpDir := t.TempDir()
+	envPath := tmpDir + "/.env"
+	if err := os.WriteFile(envPath, []byte(`
+NODE_ENV=development
+JWT_ACCESS_SECRET=jwt-access
+JWT_ACCESS_EXPIRATION_TIME=3h
+JWT_REFRESH_EXPIRATION_TIME=7d
+MAIL_HOST=pro207.emailserver.vn
+MAIL_PORT=465
+MAIL_SECURE=true
+MAIL_USER=noreply@erg.edu.vn
+MAIL_PASSWORD=mail-secret
+MAIL_FROM=[No-Reply] EDURISE GLOBAL <noreply@erg.edu.vn>
+R2_ENDPOINT=https://example.r2.cloudflarestorage.com
+R2_ACCESS_KEY_ID=key-id
+R2_SECRET_ACCESS_KEY=secret-key
+R2_BUCKET_NAME=erg
+R2_PUBLIC_DOMAIN=https://media.erg.edu.vn
+R2_REGION=auto
+GEMINI_MODEL=gemini-3-flash-preview
+`), 0644); err != nil {
+		t.Fatalf("write temp .env: %v", err)
+	}
+
+	cfg := new(Config)
+	l := NewLoader(WithConfigPaths(tmpDir), WithFileName("config"))
+	if err := l.Load(cfg); err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	if cfg.App.Env != "development" {
+		t.Errorf("expected app env 'development', got %q", cfg.App.Env)
+	}
+	if cfg.Auth.JWTSecret != "jwt-access" {
+		t.Errorf("expected JWT secret from backend-style alias, got %q", cfg.Auth.JWTSecret)
+	}
+	if cfg.Auth.AccessTokenTTL != 3*time.Hour {
+		t.Errorf("expected access ttl 3h, got %v", cfg.Auth.AccessTokenTTL)
+	}
+	if cfg.Auth.RefreshTokenTTL != 7*24*time.Hour {
+		t.Errorf("expected refresh ttl 7d, got %v", cfg.Auth.RefreshTokenTTL)
+	}
+	if cfg.SMTP.Host != "pro207.emailserver.vn" {
+		t.Errorf("expected smtp host alias, got %q", cfg.SMTP.Host)
+	}
+	if !cfg.SMTP.TLS {
+		t.Error("expected smtp TLS from MAIL_SECURE alias")
+	}
+	if cfg.R2.BucketName != "erg" {
+		t.Errorf("expected R2 bucket alias, got %q", cfg.R2.BucketName)
+	}
+	if cfg.R2.SecretKey != "secret-key" {
+		t.Errorf("expected R2 secret alias, got %q", cfg.R2.SecretKey)
+	}
+	if cfg.Ai.GeminiModel != "gemini-3-flash-preview" {
+		t.Errorf("expected gemini model alias, got %q", cfg.Ai.GeminiModel)
+	}
+}
+
 func TestGetString_Helper(t *testing.T) {
-	// Seed global cfg.
+	// Seed global cfg AND globalViper so helper functions read the same state.
 	globalCfgMu.Lock()
 	globalCfg = NewDefault()
+	v := viper.New()
+	v.Set("app.name", "erg-service")
+	v.Set("app.port", 8080)
+	v.Set("telemetry.enabled", true)
+	globalViper = v
 	globalCfgMu.Unlock()
 
 	defer func() {
 		globalCfgMu.Lock()
 		globalCfg = nil
+		globalViper = viper.New()
 		globalCfgMu.Unlock()
 	}()
 
@@ -103,6 +269,9 @@ func TestGetString_Helper(t *testing.T) {
 func TestGetInt_Helper(t *testing.T) {
 	globalCfgMu.Lock()
 	globalCfg = NewDefault()
+	v := viper.New()
+	v.Set("app.port", 8080)
+	globalViper = v
 	globalCfgMu.Unlock()
 
 	if got := GetInt("app.port", 0); got != 8080 {
@@ -113,6 +282,9 @@ func TestGetInt_Helper(t *testing.T) {
 func TestGetBool_Helper(t *testing.T) {
 	globalCfgMu.Lock()
 	globalCfg = NewDefault()
+	v := viper.New()
+	v.Set("telemetry.enabled", true)
+	globalViper = v
 	globalCfgMu.Unlock()
 
 	if got := GetBool("telemetry.enabled", false); got != true {

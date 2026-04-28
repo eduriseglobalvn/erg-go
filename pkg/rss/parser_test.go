@@ -154,9 +154,9 @@ func TestNewParser(t *testing.T) {
 
 func TestFeedItemFields(t *testing.T) {
 	item := FeedItem{
-		Title:     "Test",
-		Link:      "https://example.com/test",
-		GUID:      "guid-1",
+		Title:      "Test",
+		Link:       "https://example.com/test",
+		GUID:       "guid-1",
 		Categories: []string{"cat1", "cat2"},
 	}
 	if item.Title != "Test" {

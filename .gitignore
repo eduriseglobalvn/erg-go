@@ -1,0 +1,26 @@
+# Local environment
+.env
+.env.*
+!.env.example
+config.yaml
+
+# Local tool state
+.cache/
+.go_cache/
+.omc/
+.claude/
+
+# Build output
+bin/
+tmp/
+server
+erg-server
+plugin-server
+*.test
+
+# Test and coverage output
+coverage.out
+*.cover
+
+# OS files
+.DS_Store

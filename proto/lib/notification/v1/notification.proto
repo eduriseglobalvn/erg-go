@@ -1,0 +1,279 @@
+syntax = "proto3";
+
+package erg.ninja.lib.notification.v1;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/struct.proto";
+
+option go_package = "erg.ninja/lib/notification/v1;notificationv1";
+
+// ── Enums ──────────────────────────────────────────────────────────────────────
+
+enum ChannelType {
+  CHANNEL_TYPE_UNSPECIFIED = 0;
+  CHANNEL_TYPE_DISCORD      = 1;
+  CHANNEL_TYPE_TELEGRAM     = 2;
+  CHANNEL_TYPE_WHATSAPP     = 3;
+  CHANNEL_TYPE_EMAIL        = 4;
+  CHANNEL_TYPE_SLACK        = 5;
+  CHANNEL_TYPE_WEBHOOK      = 6;
+  CHANNEL_TYPE_SMS          = 7;
+}
+
+enum NotificationStatus {
+  NOTIFICATION_STATUS_UNSPECIFIED = 0;
+  NOTIFICATION_STATUS_PENDING      = 1;
+  NOTIFICATION_STATUS_SENT         = 2;
+  NOTIFICATION_STATUS_DELIVERED    = 3;
+  NOTIFICATION_STATUS_FAILED       = 4;
+  NOTIFICATION_STATUS_RETRYING     = 5;
+  NOTIFICATION_STATUS_CANCELED     = 6;
+}
+
+enum PreferenceValue {
+  PREFERENCE_VALUE_UNSPECIFIED = 0;
+  PREFERENCE_VALUE_ENABLED    = 1;
+  PREFERENCE_VALUE_DISABLED  = 2;
+  PREFERENCE_VALUE_DIGEST     = 3;
+}
+
+enum DigestFrequency {
+  DIGEST_FREQUENCY_UNSPECIFIED = 0;
+  DIGEST_FREQUENCY_NONE        = 1;
+  DIGEST_FREQUENCY_DAILY      = 2;
+  DIGEST_FREQUENCY_WEEKLY     = 3;
+  DIGEST_FREQUENCY_MONTHLY    = 4;
+}
+
+// ── Notification Messages ────────────────────────────────────────────────────────
+
+message SendNotificationRequest {
+  string                   tenant_id   = 1;
+  string                   user_id     = 2;
+  ChannelType              channel     = 3;
+  string                   recipient   = 4;  // email, phone, chat_id, or webhook URL
+  string                   subject     = 5;
+  string                   body        = 6;
+  string                   html_body   = 7;   // optional HTML version
+  string                   template    = 8;   // optional template name
+  google.protobuf.Struct   data        = 9;    // template variables
+  google.protobuf.Timestamp scheduled_at = 10; // optional scheduled delivery
+  int32                    max_retries = 11;  // default 3
+}
+
+message SendNotificationResponse {
+  string                     notification_id = 1;
+  NotificationStatus         status          = 2;
+  google.protobuf.Timestamp  created_at       = 3;
+}
+
+message GetNotificationRequest {
+  string notification_id = 1;
+  string tenant_id       = 2;
+}
+
+message Notification {
+  string                     id            = 1;
+  string                     user_id       = 2;
+  ChannelType                channel       = 3;
+  string                     recipient     = 4;
+  string                     subject       = 5;
+  string                     body          = 6;
+  string                     template      = 7;
+  NotificationStatus         status        = 8;
+  int32                      retry_count   = 9;
+  int32                      max_retries   = 10;
+  string                     provider      = 11;
+  bool                       digested      = 12;
+  google.protobuf.Timestamp  scheduled_at  = 13;
+  google.protobuf.Timestamp  sent_at       = 14;
+  google.protobuf.Timestamp  delivered_at  = 15;
+  google.protobuf.Timestamp  expires_at   = 16;
+  google.protobuf.Timestamp  created_at   = 17;
+  google.protobuf.Timestamp  updated_at   = 18;
+  string                     error_msg     = 19;
+}
+
+message GetNotificationResponse {
+  Notification notification = 1;
+}
+
+message ListNotificationsRequest {
+  string                tenant_id   = 1;
+  string                user_id     = 2;
+  ChannelType           channel     = 3;
+  NotificationStatus    status      = 4;
+  google.protobuf.Timestamp since   = 5;
+  google.protobuf.Timestamp until  = 6;
+  int32                 page_size   = 7;
+  string                page_token  = 8;
+}
+
+message ListNotificationsResponse {
+  repeated Notification notifications = 1;
+  string                next_page_token = 2;
+  int32                 total_count     = 3;
+}
+
+message CancelNotificationRequest {
+  string notification_id = 1;
+  string tenant_id       = 2;
+}
+
+message CancelNotificationResponse {
+  bool   canceled = 1;
+  string message  = 2;
+}
+
+// ── Preference Messages ─────────────────────────────────────────────────────────
+
+message GetPreferencesRequest {
+  string tenant_id = 1;
+  string user_id   = 2;
+}
+
+message WebhookPref {
+  string name    = 1;
+  string url     = 2;
+  bool   enabled = 3;
+}
+
+message NotificationPreferences {
+  string               tenant_id           = 1;
+  string               user_id             = 2;
+  PreferenceValue      email_pref          = 3;
+  PreferenceValue      discord_pref        = 4;
+  PreferenceValue      telegram_pref       = 5;
+  PreferenceValue      whatsapp_pref       = 6;
+  PreferenceValue      slack_pref          = 7;
+  repeated WebhookPref webhooks            = 8;
+  DigestFrequency      digest_freq         = 9;
+  string               digest_time         = 10; // "HH:MM"
+  string               language            = 11; // "vi"|"en"
+}
+
+message GetPreferencesResponse {
+  NotificationPreferences preferences = 1;
+}
+
+message UpdatePreferencesRequest {
+  string                       tenant_id  = 1;
+  string                       user_id    = 2;
+  PreferenceValue              email_pref = 3;
+  PreferenceValue              discord_pref = 4;
+  PreferenceValue              telegram_pref = 5;
+  PreferenceValue              whatsapp_pref = 6;
+  PreferenceValue              slack_pref  = 7;
+  repeated WebhookPref         webhooks   = 8;
+  DigestFrequency              digest_freq = 9;
+  string                       digest_time = 10;
+  string                       language   = 11;
+}
+
+message UpdatePreferencesResponse {
+  NotificationPreferences preferences = 1;
+}
+
+// ── Digest Messages ─────────────────────────────────────────────────────────────
+
+message ListDigestsRequest {
+  string          tenant_id = 1;
+  string          user_id   = 2;
+  DigestFrequency frequency = 3;
+  int32           page_size = 4;
+  string          page_token = 5;
+}
+
+message Digest {
+  string                     id         = 1;
+  string                     user_id    = 2;
+  ChannelType                channel    = 3;
+  string                     recipient  = 4;
+  DigestFrequency            frequency  = 5;
+  string                     subject    = 6;
+  repeated string            items      = 7;
+  int32                      count      = 8;
+  NotificationStatus         status     = 9;
+  google.protobuf.Timestamp  sent_at    = 10;
+  google.protobuf.Timestamp  created_at = 11;
+  google.protobuf.Timestamp  updated_at = 12;
+}
+
+message ListDigestsResponse {
+  repeated Digest digests        = 1;
+  string          next_page_token = 2;
+  int32           total_count    = 3;
+}
+
+// ── Delivery Log ────────────────────────────────────────────────────────────────
+
+message GetDeliveryLogRequest {
+  string notification_id = 1;
+  string tenant_id       = 2;
+}
+
+message DeliveryLogEntry {
+  int32                      attempt       = 1;
+  string                     provider      = 2;
+  NotificationStatus         status        = 3;
+  int32                      http_status   = 4;
+  string                     response_body = 5;
+  string                     error_msg     = 6;
+  int64                      duration_ms   = 7;
+  google.protobuf.Timestamp  created_at    = 8;
+}
+
+message GetDeliveryLogResponse {
+  repeated DeliveryLogEntry entries = 1;
+}
+
+// ── Bulk / Template ─────────────────────────────────────────────────────────────
+
+message SendBulkRequest {
+  string                tenant_id    = 1;
+  string                template     = 2;
+  repeated BulkRecipient recipients   = 3;
+  google.protobuf.Struct template_data = 4;
+}
+
+message BulkRecipient {
+  string                   user_id   = 1;
+  string                   recipient = 2;
+  google.protobuf.Struct   data      = 3;  // per-user overrides
+}
+
+message SendBulkResponse {
+  int32  sent_count    = 1;
+  int32  failed_count = 2;
+  string batch_id      = 3;
+}
+
+// ── Service ────────────────────────────────────────────────────────────────────
+
+service NotificationService {
+  // Send a single notification
+  rpc Send(SendNotificationRequest) returns (SendNotificationResponse);
+
+  // Get a notification by ID
+  rpc Get(GetNotificationRequest) returns (GetNotificationResponse);
+
+  // List notifications with filters
+  rpc List(ListNotificationsRequest) returns (ListNotificationsResponse);
+
+  // Cancel a pending notification
+  rpc Cancel(CancelNotificationRequest) returns (CancelNotificationResponse);
+
+  // Preference management
+  rpc GetPreferences(GetPreferencesRequest) returns (GetPreferencesResponse);
+  rpc UpdatePreferences(UpdatePreferencesRequest) returns (UpdatePreferencesResponse);
+
+  // Digest management
+  rpc ListDigests(ListDigestsRequest) returns (ListDigestsResponse);
+
+  // Delivery audit trail
+  rpc GetDeliveryLog(GetDeliveryLogRequest) returns (GetDeliveryLogResponse);
+
+  // Bulk send from template
+  rpc SendBulk(SendBulkRequest) returns (SendBulkResponse);
+}

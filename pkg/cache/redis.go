@@ -5,6 +5,7 @@ package cache
 import (
 	"context"
 	"crypto/rand"
+	"crypto/tls"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -48,8 +49,9 @@ func NewRedisClient(ctx context.Context, cfg config.RedisConfig, opts ...RedisOp
 		o(r)
 	}
 
-	client := redis.NewClient(&redis.Options{
+	options := &redis.Options{
 		Addr:         fmt.Sprintf("%s:%d", cfg.Host, cfg.Port),
+		Username:     cfg.Username,
 		Password:     cfg.Password,
 		DB:           cfg.DB,
 		DialTimeout:  cfg.DialTimeout,
@@ -58,7 +60,15 @@ func NewRedisClient(ctx context.Context, cfg config.RedisConfig, opts ...RedisOp
 		PoolSize:     cfg.PoolSize,
 		MinIdleConns: cfg.MinIdleConns,
 		MaxRetries:   cfg.MaxRetries,
-	})
+	}
+	if cfg.TLS {
+		options.TLSConfig = &tls.Config{
+			MinVersion: tls.VersionTLS12,
+			ServerName: cfg.Host,
+		}
+	}
+
+	client := redis.NewClient(options)
 
 	// Verify connectivity.
 	if err := client.Ping(ctx).Err(); err != nil {
