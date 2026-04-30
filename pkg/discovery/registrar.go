@@ -43,7 +43,7 @@ func (r *Registrar) Start(ctx context.Context) error {
 		return fmt.Errorf("discovery: registrar: register %s: %w", r.self.ID, err)
 	}
 	r.wg.Add(1)
-	go r.heartbeat(ctx)
+	go r.heartbeat(ctx) // #nosec G118 -- registrar lifetime is intentionally bound to this context and Stop channel.
 	return nil
 }
 

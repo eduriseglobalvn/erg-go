@@ -37,6 +37,7 @@ import (
 
 	docs "erg.ninja/docs" // swagger generated docs (GetSwaggerJSON, EmbeddedSwaggerUI)
 
+	"erg.ninja/internal/middleware"
 	"erg.ninja/internal/routes"
 	"erg.ninja/lib/shared"
 	"erg.ninja/pkg/auth"
@@ -97,7 +98,7 @@ func provideConfig() (*config.Config, error) {
 	cfg := config.NewDefault()
 	loader := config.NewLoader(
 		config.WithConfigPaths(".", "./config"),
-		config.WithFileName("config"),
+		config.WithFileNames("application", "config"),
 	)
 	if err := loader.Load(cfg); err != nil {
 		return nil, fmt.Errorf("config: load: %w", err)
@@ -296,19 +297,24 @@ func registerHTTPServer(
 	gormClient *database.GORMPostgresClient,
 ) {
 	router := gin.New()
+	if err := router.SetTrustedProxies(cfg.HTTP.TrustedProxyCIDRs); err != nil {
+		log.Warn().Err(err).Strs("trusted_proxy_cidrs", cfg.HTTP.TrustedProxyCIDRs).Msg("server: invalid trusted proxy CIDR config ignored by gin")
+	}
 
 	// Apply error interceptor as the outermost middleware (first in chain).
 	// This ensures it catches panics and converts ergerr.E from all handlers.
 	router.Use(interceptors.GinErrorInterceptor(log.Zerolog()))
+	router.Use(middleware.RealIPWithTrustedProxies(cfg.HTTP.TrustedProxyCIDRs))
 
-	// Apply CORS — allow all origins for API server; tighten via config if needed.
-	router.Use(cors.New(cors.Config{
-		AllowAllOrigins:  true,
-		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization", "X-Tenant-ID", "X-Request-ID", "X-Trace-ID"},
-		ExposeHeaders:    []string{"X-Request-ID", "X-Trace-ID"},
-		AllowCredentials: true,
-	}))
+	// Apply CORS from layered configuration.
+	router.Use(cors.New(buildCORSConfig(cfg)))
+
+	if cfg.HTTP.RateLimit.Enabled {
+		router.Use(middleware.RateLimit(redis, middleware.RateLimitConfig{
+			RequestsPerMinute: cfg.HTTP.RateLimit.RequestsPerMinute,
+			Burst:             cfg.HTTP.RateLimit.Burst,
+		}))
+	}
 
 	// ── Swagger & Scalar UI (Registered Early) ──────────────────────────────────
 	router.GET("/swagger/*path", gin.WrapH(http.StripPrefix("/swagger", docs.EmbeddedSwaggerUI())))
@@ -367,7 +373,11 @@ func registerHTTPServer(
 	// compose engine for declarative module wiring. Otherwise fall back to
 	// the legacy routes.Register() approach.
 	var stopFns []func(context.Context)
-	manifest, err := compose.Load("deploy.yaml", cfg)
+	manifestPath := cfg.Compose.DeployManifestPath
+	if manifestPath == "" {
+		manifestPath = "deploy.yaml"
+	}
+	manifest, err := compose.Load(manifestPath, cfg)
 	if err == nil && cfg.Compose.Enabled {
 		log.Info().
 			Int("services", len(compose.EnabledServices(manifest))).
@@ -384,7 +394,7 @@ func registerHTTPServer(
 		}
 	} else {
 		if err != nil && !errors.Is(err, compose.ErrNoDeployManifest) {
-			log.Warn().Err(err).Msg("server: deploy.yaml load failed, using legacy wiring")
+			log.Warn().Err(err).Str("path", manifestPath).Msg("server: deploy manifest load failed, using legacy wiring")
 		} else {
 			log.Debug().Msg("server: compose disabled — using legacy routes.Register()")
 		}
@@ -440,6 +450,44 @@ func defaultTenantID(cfg *config.Config) string {
 		return cfg.Tenant.DefaultID
 	}
 	return "default"
+}
+
+func buildCORSConfig(cfg *config.Config) cors.Config {
+	c := cfg.HTTP.CORS
+	methods := c.AllowedMethods
+	if len(methods) == 0 {
+		methods = []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}
+	}
+	headers := c.AllowedHeaders
+	if len(headers) == 0 {
+		headers = []string{"Origin", "Content-Type", "Accept", "Authorization", "X-Tenant-ID", "X-Request-ID", "X-Trace-ID"}
+	}
+	exposed := c.ExposedHeaders
+	if len(exposed) == 0 {
+		exposed = []string{"X-Request-ID", "X-Trace-ID"}
+	}
+	maxAge := time.Duration(c.MaxAge) * time.Second
+	if maxAge <= 0 {
+		maxAge = 12 * time.Hour
+	}
+
+	corsCfg := cors.Config{
+		AllowMethods:     methods,
+		AllowHeaders:     headers,
+		ExposeHeaders:    exposed,
+		AllowCredentials: c.AllowCredentials,
+		MaxAge:           maxAge,
+	}
+
+	for _, origin := range c.AllowedOrigins {
+		if origin == "*" {
+			corsCfg.AllowAllOrigins = true
+			corsCfg.AllowCredentials = false
+			return corsCfg
+		}
+	}
+	corsCfg.AllowOrigins = c.AllowedOrigins
+	return corsCfg
 }
 
 // ─── Legacy Lifecycle Hooks (kept for compatibility) ────────────────────────────

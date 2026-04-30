@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"image"
 	"io"
-	"math/rand/v2"
 	"net/http"
 	"net/url"
 	"strings"
@@ -19,6 +18,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/disintegration/imaging"
+	"github.com/google/uuid"
 )
 
 // R2Config holds all R2 / S3-compatible storage configuration.
@@ -334,6 +334,29 @@ func (r *R2Client) GetFileBuffer(ctx context.Context, fileURL string) ([]byte, s
 	return buf, contentType, nil
 }
 
+// GetFileStream opens an R2 object body for streaming. The caller must close the returned body.
+func (r *R2Client) GetFileStream(ctx context.Context, fileURL string) (io.ReadCloser, string, *int64, error) {
+	key, err := r.keyFromURL(fileURL)
+	if err != nil {
+		return nil, "", nil, fmt.Errorf("r2: get file stream: %w", err)
+	}
+
+	result, err := r.client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(r.bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		return nil, "", nil, fmt.Errorf("r2: get object %q: %w", key, err)
+	}
+
+	contentType := ""
+	if result.ContentType != nil {
+		contentType = *result.ContentType
+	}
+
+	return result.Body, contentType, result.ContentLength, nil
+}
+
 // keyFromURL converts a file URL to an R2 object key, with domain-ownership checks.
 func (r *R2Client) keyFromURL(fileURL string) (string, error) {
 	fileURL = strings.TrimSpace(fileURL)
@@ -374,34 +397,8 @@ func (r *R2Client) publicURL(key string) string {
 
 // newObjectID generates a short unique identifier for R2 object keys.
 func newObjectID() string {
-	// google/uuid is already a dependency of the project.
-	return strings.Replace(
-		strings.Replace(
-			strings.Replace(
-				strings.Replace(
-					strings.Replace(
-						strings.Replace(
-							"xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
-							"x", randomHexDigit(), -1),
-						"-", "-", -1),
-					"xxxx", randomHex(4), -1),
-				"xxxxxxxx", randomHex(8), -1),
-			"xxxx", randomHex(4), -1),
-		"-", "-", -1)
+	return uuid.NewString()
 }
-
-func randomHexDigit() string { return randomHex(1) }
-func randomHex(n int) string {
-	const chars = "0123456789abcdef"
-	b := make([]byte, n)
-	for i := range b {
-		b[i] = chars[int(randomUint32())%len(chars)]
-	}
-	return string(b)
-}
-
-// randomUint32 is a cheap, non-cryptographic random uint32.
-func randomUint32() uint32 { return rand.Uint32() }
 
 // detectMIME returns the MIME type from the first bytes of data (magic bytes).
 // It only recognises the types supported by this package.

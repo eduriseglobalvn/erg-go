@@ -49,7 +49,7 @@ func JWTMiddleware(validator *auth.JWTValidator, skipPaths ...string) gin.Handle
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
 				"error":   "unauthorized",
-				"message": "invalid token: " + err.Error(),
+				"message": "invalid token",
 			})
 			return
 		}

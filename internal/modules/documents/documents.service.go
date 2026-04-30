@@ -18,6 +18,7 @@ import (
 	"erg.ninja/internal/modules/documents/entities"
 	"erg.ninja/internal/modules/documents/repository"
 	"erg.ninja/internal/modules/documents/watermark"
+	"erg.ninja/pkg/auth"
 	"erg.ninja/pkg/cache"
 	"erg.ninja/pkg/config"
 	"erg.ninja/pkg/database"
@@ -37,6 +38,7 @@ type Deps struct {
 	Redis             *cache.RedisClient
 	Log               *logger.Logger
 	Cfg               *config.Config
+	JWTValidator      *auth.JWTValidator
 	TenantMongoClient *tenant.TenantMongoClient
 	R2                *storage.R2Client
 	GDrive            *storage.GDriveClient
@@ -74,7 +76,7 @@ func (m *Module) Setup() error {
 		WithDocumentsLogger(m.deps.Log),
 	)
 
-	m.ctrl = NewController(m.svc, m.deps.Log)
+	m.ctrl = NewController(m.svc, m.deps.Log, m.deps.JWTValidator)
 	return nil
 }
 
@@ -144,6 +146,36 @@ func r2Key(tenantID, docUUID, filename string) string {
 	return fmt.Sprintf("documents/%s/%s/%s", tenantID, docUUID, filename)
 }
 
+func sanitizeDocumentFilename(filename string) string {
+	name := filepath.Base(strings.TrimSpace(filename))
+	if name == "." || name == string(filepath.Separator) || name == "" {
+		name = "document.pdf"
+	}
+	var b strings.Builder
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z':
+			b.WriteRune(r)
+		case r >= 'A' && r <= 'Z':
+			b.WriteRune(r)
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case r == '.', r == '-', r == '_':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('_')
+		}
+	}
+	out := strings.Trim(b.String(), "._-")
+	if out == "" {
+		out = "document.pdf"
+	}
+	if !strings.EqualFold(filepath.Ext(out), ".pdf") {
+		out += ".pdf"
+	}
+	return out
+}
+
 // Upload handles PDF upload: watermark → Storage upload → DB record.
 func (s *Service) Upload(ctx context.Context, tenantID string, header *multipart.FileHeader, uploadedBy string, wmDTO dto.WatermarkConfigDTO, useDrive bool) (*dto.DocumentResponse, error) {
 	ctx, cancel := context.WithTimeout(ctx, uploadTimeout)
@@ -163,10 +195,17 @@ func (s *Service) Upload(ctx context.Context, tenantID string, header *multipart
 	}
 	defer src.Close()
 
-	pdfBytes, err := io.ReadAll(io.LimitReader(src, maxFileSize))
+	pdfBytes, err := io.ReadAll(io.LimitReader(src, maxFileSize+1))
 	if err != nil {
 		return nil, fmt.Errorf("documents.service.upload: read file: %w", err)
 	}
+	if int64(len(pdfBytes)) > maxFileSize {
+		return nil, fmt.Errorf("documents.service.upload: file exceeds max size")
+	}
+	if !ValidatePDFHeader(pdfBytes) {
+		return nil, fmt.Errorf("documents.service.upload: invalid PDF header")
+	}
+	safeFilename := sanitizeDocumentFilename(header.Filename)
 
 	// ── 2. Apply watermark ─────────────────────────────────────────────────
 	wmCfg := wmDTO.ToEntity()
@@ -185,13 +224,13 @@ func (s *Service) Upload(ctx context.Context, tenantID string, header *multipart
 	storageType := entities.StorageR2
 	if useDrive {
 		storageType = entities.StorageGDrive
-		id, err := s.drive.Upload(ctx, bytes.NewReader(wmPDF), header.Filename, "application/pdf", "")
+		id, err := s.drive.Upload(ctx, bytes.NewReader(wmPDF), safeFilename, "application/pdf", "")
 		if err != nil {
 			return nil, fmt.Errorf("documents.service.upload: gdrive upload: %w", err)
 		}
 		driveID = id
 	} else {
-		url, err := s.r2.UploadRaw(ctx, wmPDF, r2Key(tenantID, docUUID, ""), header.Filename, "application/pdf")
+		url, err := s.r2.UploadRaw(ctx, wmPDF, r2Key(tenantID, docUUID, ""), safeFilename, "application/pdf")
 		if err != nil {
 			return nil, fmt.Errorf("documents.service.upload: r2 upload: %w", err)
 		}
@@ -202,7 +241,7 @@ func (s *Service) Upload(ctx context.Context, tenantID string, header *multipart
 	doc := &entities.Document{
 		ID:              "",
 		TenantID:        tenantID,
-		Filename:        header.Filename,
+		Filename:        safeFilename,
 		OriginalName:    header.Filename,
 		MimeType:        "application/pdf",
 		Size:            int64(len(wmPDF)),
@@ -238,6 +277,16 @@ func (s *Service) GetByID(ctx context.Context, tenantID, id string) (*dto.Docume
 	return &resp, nil
 }
 
+// GetByIDForActor returns document metadata scoped to the owner unless the caller is an admin.
+func (s *Service) GetByIDForActor(ctx context.Context, tenantID, id, userID string, isAdmin bool) (*dto.DocumentResponse, error) {
+	doc, err := s.repo.FindByIDForUser(ctx, tenantID, id, userID, isAdmin)
+	if err != nil {
+		return nil, fmt.Errorf("documents.service.get_by_id: %w", err)
+	}
+	resp := dto.ToResponse(doc)
+	return &resp, nil
+}
+
 // List returns paginated document metadata for a tenant.
 func (s *Service) List(ctx context.Context, tenantID, cursor string, limit int) (*dto.ListDocumentsResponse, error) {
 	if limit <= 0 {
@@ -248,11 +297,28 @@ func (s *Service) List(ctx context.Context, tenantID, cursor string, limit int) 
 	}
 
 	docs, nextCursor, err := s.repo.List(ctx, tenantID, cursor, limit)
-	if err != nil {
-		return nil, fmt.Errorf("documents.service.list: %w", err)
+	return s.listResponse(ctx, tenantID, "", true, docs, nextCursor, err)
+}
+
+// ListForActor lists documents scoped to the owner unless the caller is an admin.
+func (s *Service) ListForActor(ctx context.Context, tenantID, userID string, isAdmin bool, cursor string, limit int) (*dto.ListDocumentsResponse, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
 	}
 
-	total, err := s.repo.Count(ctx, tenantID)
+	docs, nextCursor, err := s.repo.ListForUser(ctx, tenantID, userID, isAdmin, cursor, limit)
+	return s.listResponse(ctx, tenantID, userID, isAdmin, docs, nextCursor, err)
+}
+
+func (s *Service) listResponse(ctx context.Context, tenantID, userID string, isAdmin bool, docs []entities.Document, nextCursor string, listErr error) (*dto.ListDocumentsResponse, error) {
+	if listErr != nil {
+		return nil, fmt.Errorf("documents.service.list: %w", listErr)
+	}
+
+	total, err := s.repo.CountForUser(ctx, tenantID, userID, isAdmin)
 	if err != nil {
 		s.log.Warn().Err(err).Msg("documents: count failed, returning 0 total")
 		total = 0
@@ -272,6 +338,11 @@ func (s *Service) List(ctx context.Context, tenantID, cursor string, limit int) 
 
 // Update updates document metadata (watermark config).
 func (s *Service) Update(ctx context.Context, tenantID, id string, req *dto.UpdateDocumentRequest) (*dto.DocumentResponse, error) {
+	return s.UpdateForActor(ctx, tenantID, id, "", true, req)
+}
+
+// UpdateForActor updates document metadata scoped to the owner unless the caller is an admin.
+func (s *Service) UpdateForActor(ctx context.Context, tenantID, id, userID string, isAdmin bool, req *dto.UpdateDocumentRequest) (*dto.DocumentResponse, error) {
 	if req.Watermark != nil {
 		wmCfg := req.Watermark.ToEntity()
 		if err := watermark.ValidateConfig(wmCfg); err != nil {
@@ -280,12 +351,12 @@ func (s *Service) Update(ctx context.Context, tenantID, id string, req *dto.Upda
 		updates := map[string]any{
 			"watermark_config": wmCfg,
 		}
-		if err := s.repo.UpdateFields(ctx, tenantID, id, updates); err != nil {
+		if err := s.repo.UpdateFieldsForUser(ctx, tenantID, id, userID, isAdmin, updates); err != nil {
 			return nil, fmt.Errorf("documents.service.update: %w", err)
 		}
 	}
 
-	doc, err := s.repo.FindByID(ctx, tenantID, id)
+	doc, err := s.repo.FindByIDForUser(ctx, tenantID, id, userID, isAdmin)
 	if err != nil {
 		return nil, fmt.Errorf("documents.service.update: find: %w", err)
 	}
@@ -295,7 +366,12 @@ func (s *Service) Update(ctx context.Context, tenantID, id string, req *dto.Upda
 
 // Delete removes a document: DB record + R2 object.
 func (s *Service) Delete(ctx context.Context, tenantID, id string) error {
-	doc, err := s.repo.FindByID(ctx, tenantID, id)
+	return s.DeleteForActor(ctx, tenantID, id, "", true)
+}
+
+// DeleteForActor deletes a document scoped to the owner unless the caller is an admin.
+func (s *Service) DeleteForActor(ctx context.Context, tenantID, id, userID string, isAdmin bool) error {
+	doc, err := s.repo.FindByIDForUser(ctx, tenantID, id, userID, isAdmin)
 	if err != nil {
 		return fmt.Errorf("documents.service.delete: %w", err)
 	}
@@ -307,7 +383,7 @@ func (s *Service) Delete(ctx context.Context, tenantID, id string) error {
 		}
 	}
 
-	if err := s.repo.Delete(ctx, tenantID, id); err != nil {
+	if err := s.repo.DeleteForUser(ctx, tenantID, id, userID, isAdmin); err != nil {
 		return fmt.Errorf("documents.service.delete: %w", err)
 	}
 	return nil
@@ -315,7 +391,12 @@ func (s *Service) Delete(ctx context.Context, tenantID, id string) error {
 
 // StreamFile returns the R2 URL or a stream for Drive documents.
 func (s *Service) StreamFile(ctx context.Context, tenantID, id string) (string, io.ReadCloser, error) {
-	doc, err := s.repo.FindByID(ctx, tenantID, id)
+	return s.StreamFileForActor(ctx, tenantID, id, "", true)
+}
+
+// StreamFileForActor returns a storage stream scoped to the owner unless the caller is an admin.
+func (s *Service) StreamFileForActor(ctx context.Context, tenantID, id, userID string, isAdmin bool) (string, io.ReadCloser, error) {
+	doc, err := s.repo.FindByIDForUser(ctx, tenantID, id, userID, isAdmin)
 	if err != nil {
 		return "", nil, fmt.Errorf("documents.service.stream_file: %w", err)
 	}
@@ -331,7 +412,15 @@ func (s *Service) StreamFile(ctx context.Context, tenantID, id string) (string, 
 		return "", stream, nil
 	}
 
-	return doc.R2URL, nil, nil
+	if doc.R2URL != "" && s.r2 != nil {
+		stream, _, _, err := s.r2.GetFileStream(ctx, doc.R2URL)
+		if err != nil {
+			return "", nil, fmt.Errorf("documents.service.stream_file: r2: %w", err)
+		}
+		return "", stream, nil
+	}
+
+	return "", nil, fmt.Errorf("documents.service.stream_file: storage object not available")
 }
 
 // IsNotFound returns true if err is a document-not-found sentinel.
@@ -342,4 +431,9 @@ func IsNotFound(err error) bool {
 // ValidateFileExtension checks that the file extension is .pdf.
 func ValidateFileExtension(filename string) bool {
 	return strings.EqualFold(filepath.Ext(filename), ".pdf")
+}
+
+// ValidatePDFHeader checks the PDF magic bytes.
+func ValidatePDFHeader(data []byte) bool {
+	return bytes.HasPrefix(bytes.TrimSpace(data), []byte("%PDF-"))
 }

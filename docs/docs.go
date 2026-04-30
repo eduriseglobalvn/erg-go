@@ -7656,8 +7656,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/erg_ninja_internal_modules_users_dto_response.SessionListResponse"
                         }
                     }
                 }
@@ -7691,10 +7690,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
+                            "$ref": "#/definitions/erg_ninja_internal_modules_users_dto_response.RevokeSessionResponse"
                         }
                     }
                 }
@@ -8736,11 +8732,23 @@ const docTemplate = `{
                 "password"
             ],
             "properties": {
+                "deviceFingerprint": {
+                    "type": "string"
+                },
+                "deviceId": {
+                    "type": "string"
+                },
+                "deviceName": {
+                    "type": "string"
+                },
                 "email": {
                     "type": "string"
                 },
                 "password": {
                     "type": "string"
+                },
+                "rememberMe": {
+                    "type": "boolean"
                 }
             }
         },
@@ -8750,6 +8758,9 @@ const docTemplate = `{
                 "refreshToken"
             ],
             "properties": {
+                "deviceId": {
+                    "type": "string"
+                },
                 "refreshToken": {
                     "type": "string"
                 }
@@ -8849,8 +8860,17 @@ const docTemplate = `{
                 "expiresIn": {
                     "type": "integer"
                 },
+                "permissions": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "refreshToken": {
                     "type": "string"
+                },
+                "session": {
+                    "$ref": "#/definitions/erg_ninja_internal_modules_auth_dto_response.SessionDeviceDTO"
                 },
                 "tokenType": {
                     "type": "string"
@@ -8914,6 +8934,44 @@ const docTemplate = `{
                     }
                 },
                 "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "erg_ninja_internal_modules_auth_dto_response.SessionDeviceDTO": {
+            "type": "object",
+            "properties": {
+                "createdAt": {
+                    "type": "string"
+                },
+                "current": {
+                    "type": "boolean"
+                },
+                "deviceId": {
+                    "type": "string"
+                },
+                "deviceName": {
+                    "type": "string"
+                },
+                "expiresAt": {
+                    "type": "string"
+                },
+                "ipAddress": {
+                    "type": "string"
+                },
+                "lastSeenAt": {
+                    "type": "string"
+                },
+                "revoked": {
+                    "type": "boolean"
+                },
+                "revokedReason": {
+                    "type": "string"
+                },
+                "sessionId": {
+                    "type": "string"
+                },
+                "userAgent": {
                     "type": "string"
                 }
             }
@@ -9867,8 +9925,7 @@ const docTemplate = `{
                 "distribution": {
                     "type": "object",
                     "additionalProperties": {
-                        "type": "integer",
-                        "format": "int64"
+                        "type": "integer"
                     }
                 }
             }
@@ -9965,6 +10022,69 @@ const docTemplate = `{
                 },
                 "totalPages": {
                     "type": "integer"
+                }
+            }
+        },
+        "erg_ninja_internal_modules_users_dto_response.RevokeSessionResponse": {
+            "type": "object",
+            "properties": {
+                "revokedAt": {
+                    "type": "string"
+                },
+                "success": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "erg_ninja_internal_modules_users_dto_response.SessionListResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/erg_ninja_internal_modules_users_dto_response.SessionResponse"
+                    }
+                }
+            }
+        },
+        "erg_ninja_internal_modules_users_dto_response.SessionResponse": {
+            "type": "object",
+            "properties": {
+                "createdAt": {
+                    "type": "string"
+                },
+                "current": {
+                    "type": "boolean"
+                },
+                "deviceId": {
+                    "type": "string"
+                },
+                "deviceName": {
+                    "type": "string"
+                },
+                "deviceType": {
+                    "type": "string"
+                },
+                "expiresAt": {
+                    "type": "string"
+                },
+                "ipAddress": {
+                    "type": "string"
+                },
+                "lastSeenAt": {
+                    "type": "string"
+                },
+                "revoked": {
+                    "type": "boolean"
+                },
+                "revokedReason": {
+                    "type": "string"
+                },
+                "sessionId": {
+                    "type": "string"
+                },
+                "userAgent": {
+                    "type": "string"
                 }
             }
         },

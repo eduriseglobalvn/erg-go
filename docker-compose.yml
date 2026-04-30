@@ -50,15 +50,15 @@ services:
       retries: 5
 
   # ── Services ────────────────────────────────────────────────────────────────
-  bot-service:
+  erg-server:
     build:
       context: .
       dockerfile: Dockerfile.base
-      target: builder
-    container_name: erg-bot-service
+      target: runtime
+    container_name: erg-server
     restart: unless-stopped
     ports:
-      - "8081:8080"
+      - "8080:8080"
     environment:
       APP__PORT: 8080
       APP__ENV: development
@@ -66,11 +66,11 @@ services:
       MONGODB__DATABASE: erg
       REDIS__HOST: redis
       REDIS__PORT: 6379
+      QUEUE__REDIS_HOST: redis
+      QUEUE__REDIS_PORT: 6379
       TELEMETRY__ENABLED: "true"
       TELEMETRY__ENVIRONMENT: development
       LOGGING__LEVEL: debug
-    volumes:
-      - ./cmd/bot-service:/app
     depends_on:
       mongodb:
         condition: service_healthy
@@ -78,94 +78,7 @@ services:
         condition: service_healthy
     networks:
       - erg-network
-    command: ["/bin/bot-service"]
-
-  notification-service:
-    build:
-      context: .
-      dockerfile: Dockerfile.base
-      target: builder
-    container_name: erg-notification-service
-    restart: unless-stopped
-    ports:
-      - "8082:8080"
-    environment:
-      APP__PORT: 8080
-      APP__ENV: development
-      MONGODB__URI: mongodb://mongodb:27017
-      MONGODB__DATABASE: erg_notifications
-      REDIS__HOST: redis
-      REDIS__PORT: 6379
-      QUEUE__REDIS_HOST: redis
-      QUEUE__REDIS_PORT: 6379
-      TELEMETRY__ENABLED: "true"
-      LOGGING__LEVEL: debug
-    depends_on:
-      mongodb:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    networks:
-      - erg-network
-    command: ["/bin/notification-service"]
-
-  crawler-service:
-    build:
-      context: .
-      dockerfile: Dockerfile.base
-      target: builder
-    container_name: erg-crawler-service
-    restart: unless-stopped
-    ports:
-      - "8083:8080"
-    environment:
-      APP__PORT: 8080
-      APP__ENV: development
-      MONGODB__URI: mongodb://mongodb:27017
-      MONGODB__DATABASE: erg_crawler
-      REDIS__HOST: redis
-      REDIS__PORT: 6379
-      QUEUE__REDIS_HOST: redis
-      QUEUE__REDIS_PORT: 6379
-      TELEMETRY__ENABLED: "true"
-      LOGGING__LEVEL: debug
-      SCRAPER__MIN_DELAY: 3s
-      SCRAPER__RESPECT_ROBOTS_TXT: "true"
-    depends_on:
-      mongodb:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    networks:
-      - erg-network
-    command: ["/bin/crawler-service"]
-
-  trending-service:
-    build:
-      context: .
-      dockerfile: Dockerfile.base
-      target: builder
-    container_name: erg-trending-service
-    restart: unless-stopped
-    ports:
-      - "8084:8080"
-    environment:
-      APP__PORT: 8080
-      APP__ENV: development
-      MONGODB__URI: mongodb://mongodb:27017
-      MONGODB__DATABASE: erg_trending
-      REDIS__HOST: redis
-      REDIS__PORT: 6379
-      TELEMETRY__ENABLED: "true"
-      LOGGING__LEVEL: debug
-    depends_on:
-      mongodb:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    networks:
-      - erg-network
-    command: ["/bin/trending-service"]
+    command: ["/bin/erg-server"]
 
   # ── Optional: Jaeger for distributed tracing ──────────────────────────────
   jaeger:

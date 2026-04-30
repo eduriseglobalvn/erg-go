@@ -39,9 +39,9 @@ func (r *Renderer) Apply(pdfBytes []byte, cfg entities.WatermarkConfig) ([]byte,
 		Float64("offset_x", cfg.OffsetX).
 		Float64("offset_y", cfg.OffsetY).
 		Float64("rotation", cfg.Rotation).
-		Msg("watermark: renderer dependency unavailable, returning original PDF without watermark")
+		Msg("watermark: renderer dependency unavailable")
 
-	return pdfBytes, nil
+	return nil, fmt.Errorf("watermark renderer dependency unavailable")
 }
 
 // ValidateConfig returns an error if the watermark config is invalid.

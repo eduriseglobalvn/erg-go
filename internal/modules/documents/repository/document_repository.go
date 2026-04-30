@@ -48,6 +48,22 @@ func (r *Repository) FindByID(ctx context.Context, tenantID, id string) (*entiti
 	defer cancel()
 
 	filter := bson.M{"_id": id, "tenant_id": tenantID}
+	return r.findOne(ctx, filter)
+}
+
+// FindByIDForUser returns a document by ID scoped to the owner unless the caller is an admin.
+func (r *Repository) FindByIDForUser(ctx context.Context, tenantID, id, userID string, isAdmin bool) (*entities.Document, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	filter := bson.M{"_id": id, "tenant_id": tenantID}
+	if !isAdmin {
+		filter["uploaded_by"] = userID
+	}
+	return r.findOne(ctx, filter)
+}
+
+func (r *Repository) findOne(ctx context.Context, filter bson.M) (*entities.Document, error) {
 	var doc entities.Document
 	err := r.coll.FindOne(ctx, filter).Decode(&doc)
 	if err != nil {
@@ -98,6 +114,22 @@ func (r *Repository) UpdateFields(ctx context.Context, tenantID, id string, upda
 	defer cancel()
 
 	filter := bson.M{"_id": id, "tenant_id": tenantID}
+	return r.updateFields(ctx, filter, updates)
+}
+
+// UpdateFieldsForUser updates a document scoped to the owner unless the caller is an admin.
+func (r *Repository) UpdateFieldsForUser(ctx context.Context, tenantID, id, userID string, isAdmin bool, updates map[string]any) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	filter := bson.M{"_id": id, "tenant_id": tenantID}
+	if !isAdmin {
+		filter["uploaded_by"] = userID
+	}
+	return r.updateFields(ctx, filter, updates)
+}
+
+func (r *Repository) updateFields(ctx context.Context, filter bson.M, updates map[string]any) error {
 	updates["updated_at"] = time.Now()
 	update := bson.M{"$set": updates}
 
@@ -117,6 +149,22 @@ func (r *Repository) Delete(ctx context.Context, tenantID, id string) error {
 	defer cancel()
 
 	filter := bson.M{"_id": id, "tenant_id": tenantID}
+	return r.deleteOne(ctx, filter)
+}
+
+// DeleteForUser deletes a document scoped to the owner unless the caller is an admin.
+func (r *Repository) DeleteForUser(ctx context.Context, tenantID, id, userID string, isAdmin bool) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	filter := bson.M{"_id": id, "tenant_id": tenantID}
+	if !isAdmin {
+		filter["uploaded_by"] = userID
+	}
+	return r.deleteOne(ctx, filter)
+}
+
+func (r *Repository) deleteOne(ctx context.Context, filter bson.M) error {
 	result, err := r.coll.DeleteOne(ctx, filter)
 	if err != nil {
 		return err
@@ -133,6 +181,22 @@ func (r *Repository) List(ctx context.Context, tenantID string, cursor string, l
 	defer cancel()
 
 	filter := bson.M{"tenant_id": tenantID}
+	return r.list(ctx, filter, cursor, limit)
+}
+
+// ListForUser lists documents scoped to the owner unless the caller is an admin.
+func (r *Repository) ListForUser(ctx context.Context, tenantID, userID string, isAdmin bool, cursor string, limit int) ([]entities.Document, string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	filter := bson.M{"tenant_id": tenantID}
+	if !isAdmin {
+		filter["uploaded_by"] = userID
+	}
+	return r.list(ctx, filter, cursor, limit)
+}
+
+func (r *Repository) list(ctx context.Context, filter bson.M, cursor string, limit int) ([]entities.Document, string, error) {
 	opts := options.Find().
 		SetSort(bson.D{{Key: "created_at", Value: -1}}).
 		SetLimit(int64(limit + 1))
@@ -168,4 +232,16 @@ func (r *Repository) Count(ctx context.Context, tenantID string) (int64, error) 
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	return r.coll.CountDocuments(ctx, bson.M{"tenant_id": tenantID})
+}
+
+// CountForUser counts documents scoped to the owner unless the caller is an admin.
+func (r *Repository) CountForUser(ctx context.Context, tenantID, userID string, isAdmin bool) (int64, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	filter := bson.M{"tenant_id": tenantID}
+	if !isAdmin {
+		filter["uploaded_by"] = userID
+	}
+	return r.coll.CountDocuments(ctx, filter)
 }

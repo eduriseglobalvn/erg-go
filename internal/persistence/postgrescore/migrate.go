@@ -16,6 +16,8 @@ func AutoMigrate(db *gorm.DB) error {
 		&AuthUser{},
 		&AuthSession{},
 		&AuthPin{},
+		&AuthLoginAttempt{},
+		&FirewallRule{},
 		&ACPermission{},
 		&ACPermissionGroup{},
 		&ACRole{},

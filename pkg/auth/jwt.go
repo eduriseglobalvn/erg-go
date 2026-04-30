@@ -4,8 +4,10 @@
 package auth
 
 import (
+	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/hex"
 	"encoding/pem"
 	"fmt"
 	"strings"
@@ -256,10 +258,10 @@ func WithIssuer(issuer string) AuthProviderOption {
 // Falls back to sensible defaults (15m access, 7d refresh).
 func NewAuthServiceProvider(accessSecret, refreshSecret string, opts ...AuthProviderOption) *AuthServiceProvider {
 	if accessSecret == "" {
-		accessSecret = "dev-access-secret-change-in-production"
+		accessSecret = randomProviderSecret()
 	}
 	if refreshSecret == "" {
-		refreshSecret = "dev-refresh-secret-change-in-production"
+		refreshSecret = randomProviderSecret()
 	}
 	p := &AuthServiceProvider{
 		accessSecret:  []byte(accessSecret),
@@ -272,6 +274,14 @@ func NewAuthServiceProvider(accessSecret, refreshSecret string, opts ...AuthProv
 		o(p)
 	}
 	return p
+}
+
+func randomProviderSecret() string {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		panic(fmt.Errorf("auth: generate provider secret: %w", err))
+	}
+	return hex.EncodeToString(b)
 }
 
 // IssuePair creates a new access + refresh token pair for the given claims.

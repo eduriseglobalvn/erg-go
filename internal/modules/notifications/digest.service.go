@@ -86,7 +86,7 @@ func (s *DigestService) Start(ctx context.Context, cfg DigestConfig) {
 	s.mu.Lock()
 	s.stopFlush = flushCancel
 	s.mu.Unlock()
-	go s.runFlushLoop(flushCtx, cfg)
+	go s.runFlushLoop(flushCtx, cfg) // #nosec G118 -- digest flushing is a service-owned background loop with an explicit cancel path.
 }
 
 // Stop is called to signal the flush goroutine to exit.

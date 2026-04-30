@@ -1,10 +1,11 @@
 // Package config provides Viper-based configuration loading for all services.
-// It supports YAML files, environment variable overrides, and secret injection.
+// It supports layered YAML files, environment variable overrides, and secret injection.
 package config
 
 import (
 	"bufio"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -16,7 +17,7 @@ import (
 )
 
 // Config is the root configuration type. Services embed this or a subset of
-// its fields and call Load to populate it from config.yaml / environment.
+// its fields and call Load to populate it from application.yaml/config.yaml and environment.
 type Config struct {
 	App       AppConfig       `mapstructure:"app"`
 	Database  DatabaseConfig  `mapstructure:"database"`
@@ -146,15 +147,18 @@ type AppConfig struct {
 
 // DatabaseConfig holds MySQL/PostgreSQL connection settings.
 type DatabaseConfig struct {
-	Host            string        `mapstructure:"host"`
-	Port            int           `mapstructure:"port"`
-	User            string        `mapstructure:"user"`
-	Password        string        `mapstructure:"password"`
-	Name            string        `mapstructure:"name"`
-	MaxOpenConns    int           `mapstructure:"max_open_conns"`
-	MaxIdleConns    int           `mapstructure:"max_idle_conns"`
-	ConnMaxLifetime time.Duration `mapstructure:"conn_max_lifetime"`
-	ConnMaxIdleTime time.Duration `mapstructure:"conn_max_idle_time"`
+	Host             string        `mapstructure:"host"`
+	Port             int           `mapstructure:"port"`
+	User             string        `mapstructure:"user"`
+	Password         string        `mapstructure:"password"`
+	Name             string        `mapstructure:"name"`
+	MaxOpenConns     int           `mapstructure:"max_open_conns"`
+	MaxIdleConns     int           `mapstructure:"max_idle_conns"`
+	ConnMaxLifetime  time.Duration `mapstructure:"conn_max_lifetime"`
+	ConnMaxIdleTime  time.Duration `mapstructure:"conn_max_idle_time"`
+	AutoMigrate      bool          `mapstructure:"auto_migrate"`
+	RunBackfills     bool          `mapstructure:"run_backfills"`
+	MigrationTimeout time.Duration `mapstructure:"migration_timeout"`
 }
 
 // MongoDBConfig holds MongoDB connection settings.
@@ -252,6 +256,7 @@ type AiConfig struct {
 // AuthConfig holds authentication settings.
 type AuthConfig struct {
 	JWTSecret          string        `mapstructure:"jwt_secret"`
+	JWTRefreshSecret   string        `mapstructure:"jwt_refresh_secret"`
 	JWTPublicKey       string        `mapstructure:"jwt_public_key"`
 	JWTIssuer          string        `mapstructure:"jwt_issuer"`
 	GoogleBridgeSecret string        `mapstructure:"google_bridge_secret"`
@@ -263,7 +268,11 @@ type AuthConfig struct {
 	Argon2Memory       uint32        `mapstructure:"argon2_memory"`
 	Argon2Iterations   uint32        `mapstructure:"argon2_iterations"`
 	MaxFailedLogin     int           `mapstructure:"max_failed_login"`
+	FailedLoginWindow  time.Duration `mapstructure:"failed_login_window"`
 	BlockDuration      time.Duration `mapstructure:"block_duration"`
+	GeoBlockEnabled    bool          `mapstructure:"geo_block_enabled"`
+	BlockUnknownGeo    bool          `mapstructure:"block_unknown_geo"`
+	AllowedContinents  []string      `mapstructure:"allowed_continents"`
 	// BootstrapAdmin controls whether a default super-admin account is created on startup.
 	AdminEmail    string `mapstructure:"admin_email"`
 	AdminPassword string `mapstructure:"admin_password"`
@@ -271,14 +280,15 @@ type AuthConfig struct {
 
 // HTTPConfig holds HTTP server settings.
 type HTTPConfig struct {
-	Host            string          `mapstructure:"host"`
-	Port            int             `mapstructure:"port"`
-	ReadTimeout     time.Duration   `mapstructure:"read_timeout"`
-	WriteTimeout    time.Duration   `mapstructure:"write_timeout"`
-	IdleTimeout     time.Duration   `mapstructure:"idle_timeout"`
-	ShutdownTimeout time.Duration   `mapstructure:"shutdown_timeout"`
-	RateLimit       RateLimitConfig `mapstructure:"rate_limit"`
-	CORS            CORSConfig      `mapstructure:"cors"`
+	Host              string          `mapstructure:"host"`
+	Port              int             `mapstructure:"port"`
+	ReadTimeout       time.Duration   `mapstructure:"read_timeout"`
+	WriteTimeout      time.Duration   `mapstructure:"write_timeout"`
+	IdleTimeout       time.Duration   `mapstructure:"idle_timeout"`
+	ShutdownTimeout   time.Duration   `mapstructure:"shutdown_timeout"`
+	TrustedProxyCIDRs []string        `mapstructure:"trusted_proxy_cidrs"`
+	RateLimit         RateLimitConfig `mapstructure:"rate_limit"`
+	CORS              CORSConfig      `mapstructure:"cors"`
 }
 
 // RateLimitConfig holds rate limiting settings.
@@ -358,7 +368,7 @@ var (
 
 const secretPrefix = "SECRET_"
 
-var legacyEnvKeyAliases = map[string]string{
+var legacyEnvKeyAliases = map[string]string{ // #nosec G101 -- keys are environment variable names and config paths, not credential values.
 	"APP_ENV":                     "app.env",
 	"NODE_ENV":                    "app.env",
 	"DB_HOST":                     "database.host",
@@ -396,14 +406,15 @@ var legacyEnvKeyAliases = map[string]string{
 	"R2__SECRET_ACCESS_KEY":       "r2.secret_key",
 	"GEMINI_MODEL":                "ai.gemini_model",
 	"GDRIVE_CREDENTIAL_JSON":      "gdrive.credential_json",
-	"GDRIVE_FOLDER_ID":           "gdrive.folder_id",
+	"GDRIVE_FOLDER_ID":            "gdrive.folder_id",
 }
 
 // Loader encapsulates Viper configuration options.
 type Loader struct {
 	configPaths []string
 	envPrefix   string
-	fileName    string
+	fileNames   []string
+	profile     string
 }
 
 // LoaderOption applies an option to the Loader.
@@ -423,10 +434,37 @@ func WithEnvPrefix(prefix string) LoaderOption {
 	}
 }
 
-// WithFileName sets the config file name without extension (default: "config").
+// WithFileName sets the config file name without extension.
 func WithFileName(name string) LoaderOption {
 	return func(l *Loader) {
-		l.fileName = name
+		if strings.TrimSpace(name) == "" {
+			return
+		}
+		l.fileNames = []string{name}
+	}
+}
+
+// WithFileNames sets multiple config file names without extension.
+// Files are merged in order, so later names override earlier names.
+func WithFileNames(names ...string) LoaderOption {
+	return func(l *Loader) {
+		l.fileNames = l.fileNames[:0]
+		for _, name := range names {
+			name = strings.TrimSpace(name)
+			if name == "" {
+				continue
+			}
+			l.fileNames = append(l.fileNames, name)
+		}
+	}
+}
+
+// WithProfile sets the active config profile, e.g. "development" or "production".
+// When empty, the loader discovers it from ERG_PROFILE, APP_PROFILE, APP__ENV,
+// APP_ENV, NODE_ENV, then from app.env in the base YAML files.
+func WithProfile(profile string) LoaderOption {
+	return func(l *Loader) {
+		l.profile = strings.TrimSpace(profile)
 	}
 }
 
@@ -435,7 +473,7 @@ func NewLoader(opts ...LoaderOption) *Loader {
 	l := &Loader{
 		configPaths: []string{"."},
 		envPrefix:   "",
-		fileName:    "config",
+		fileNames:   []string{"application", "config"},
 	}
 	for _, o := range opts {
 		o(l)
@@ -443,28 +481,43 @@ func NewLoader(opts ...LoaderOption) *Loader {
 	return l
 }
 
-// Load reads configuration from YAML files and environment variables into out.
+// Load reads configuration from layered YAML files and environment variables into out.
+//
+// Merge order, from lowest to highest precedence:
+//   - application.yaml, then config.yaml
+//   - application.<profile>.yaml, then config.<profile>.yaml
+//   - application.local.yaml, then config.local.yaml
+//   - application.<profile>.local.yaml, then config.<profile>.local.yaml
+//   - .env values
+//   - process environment variables
 func (l *Loader) Load(out interface{}) error {
 	v := viper.New()
 
 	for _, p := range l.configPaths {
 		v.AddConfigPath(p)
 	}
-	v.SetConfigName(l.fileName)
 	v.SetConfigType("yaml")
 
 	v.SetEnvPrefix(l.envPrefix)
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	v.AutomaticEnv()
 
-	if err := v.ReadInConfig(); err != nil {
-		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
-			return fmt.Errorf("config: read config file: %w", err)
-		}
+	dotEnv := loadDotEnv(l.configPaths)
+	processEnv := envMapFromEnviron(os.Environ())
+
+	if err := l.mergeBaseConfig(v); err != nil {
+		return err
+	}
+	profile := l.resolveProfile(v, dotEnv, processEnv)
+	if err := l.mergeProfileConfig(v, profile); err != nil {
+		return err
+	}
+	if err := l.mergeLocalConfig(v, profile); err != nil {
+		return err
 	}
 
-	applyEnvOverrides(v, loadDotEnv(l.configPaths))
-	applyEnvOverrides(v, envMapFromEnviron(os.Environ()))
+	applyEnvOverrides(v, dotEnv)
+	applyEnvOverrides(v, processEnv)
 
 	if err := v.Unmarshal(out); err != nil {
 		return fmt.Errorf("config: unmarshal into struct: %w", err)
@@ -484,6 +537,102 @@ func (l *Loader) Load(out interface{}) error {
 	globalCfgMu.Unlock()
 
 	return nil
+}
+
+func (l *Loader) normalizedFileNames() []string {
+	if len(l.fileNames) == 0 {
+		return []string{"application", "config"}
+	}
+	names := make([]string, 0, len(l.fileNames))
+	seen := make(map[string]struct{}, len(l.fileNames))
+	for _, name := range l.fileNames {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		names = append(names, name)
+	}
+	if len(names) == 0 {
+		return []string{"application", "config"}
+	}
+	return names
+}
+
+func (l *Loader) mergeBaseConfig(v *viper.Viper) error {
+	for _, name := range l.normalizedFileNames() {
+		if err := l.mergeNamedConfig(v, name); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (l *Loader) mergeProfileConfig(v *viper.Viper, profile string) error {
+	if profile == "" {
+		return nil
+	}
+	for _, name := range l.normalizedFileNames() {
+		if err := l.mergeNamedConfig(v, name+"."+profile); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (l *Loader) mergeLocalConfig(v *viper.Viper, profile string) error {
+	for _, name := range l.normalizedFileNames() {
+		if err := l.mergeNamedConfig(v, name+".local"); err != nil {
+			return err
+		}
+	}
+	if profile == "" {
+		return nil
+	}
+	for _, name := range l.normalizedFileNames() {
+		if err := l.mergeNamedConfig(v, name+"."+profile+".local"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (l *Loader) mergeNamedConfig(v *viper.Viper, name string) error {
+	v.SetConfigName(name)
+	v.SetConfigType("yaml")
+	if err := v.MergeInConfig(); err != nil {
+		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
+			return nil
+		}
+		return fmt.Errorf("config: read %s.yaml: %w", name, err)
+	}
+	return nil
+}
+
+func (l *Loader) resolveProfile(v *viper.Viper, dotEnv, processEnv map[string]string) string {
+	if l.profile != "" {
+		return normalizeProfile(l.profile)
+	}
+	for _, entries := range []map[string]string{processEnv, dotEnv} {
+		for _, key := range []string{"ERG_PROFILE", "APP_PROFILE", "APP__ENV", "APP_ENV", "NODE_ENV"} {
+			if val := normalizeProfile(entries[key]); val != "" {
+				return val
+			}
+		}
+	}
+	return normalizeProfile(v.GetString("app.env"))
+}
+
+func normalizeProfile(profile string) string {
+	profile = strings.TrimSpace(strings.ToLower(profile))
+	profile = strings.ReplaceAll(profile, "_", "-")
+	if profile == "local" {
+		return ""
+	}
+	return profile
 }
 
 func applyEnvOverrides(v *viper.Viper, entries map[string]string) {
@@ -533,7 +682,7 @@ func loadDotEnv(paths []string) map[string]string {
 		}
 		seen[path] = struct{}{}
 
-		file, err := os.Open(path)
+		file, err := os.Open(path) // #nosec G304 -- path is a configured search directory joined with the fixed ".env" filename.
 		if err != nil {
 			continue
 		}
@@ -647,6 +796,7 @@ func isDurationLikeKey(key string) bool {
 		strings.HasSuffix(key, ".conn_max_lifetime"),
 		strings.HasSuffix(key, ".conn_max_idle_time"),
 		strings.HasSuffix(key, ".block_duration"),
+		strings.HasSuffix(key, ".failed_login_window"),
 		strings.HasSuffix(key, ".min_delay"),
 		strings.HasSuffix(key, ".max_delay"),
 		strings.HasSuffix(key, ".timeout"),
@@ -662,11 +812,88 @@ func validateConfig(cfg *Config) error {
 	if cfg == nil {
 		return fmt.Errorf("config: nil config")
 	}
+	if err := validateTrustedProxyCIDRs(cfg.HTTP.TrustedProxyCIDRs); err != nil {
+		return err
+	}
 	if strings.EqualFold(cfg.App.Env, "production") {
 		for _, origin := range cfg.HTTP.CORS.AllowedOrigins {
 			if origin == "*" {
 				return fmt.Errorf("config: http.cors.allowed_origins cannot contain '*' in production")
 			}
+		}
+		if cfg.Database.AutoMigrate {
+			return fmt.Errorf("config: database.auto_migrate must be false in production; run cmd/db-migrate instead")
+		}
+		if cfg.Database.RunBackfills {
+			return fmt.Errorf("config: database.run_backfills must be false in production; run cmd/db-migrate -backfill instead")
+		}
+		if cfg.Auth.JWTSecret == "" && cfg.Auth.JWTPublicKey == "" {
+			return fmt.Errorf("config: auth.jwt_secret or auth.jwt_public_key is required in production")
+		}
+		if cfg.Auth.JWTSecret != "" {
+			if err := validateProductionSecret("auth.jwt_secret", cfg.Auth.JWTSecret, 32); err != nil {
+				return err
+			}
+			if err := validateProductionSecret("auth.jwt_refresh_secret", cfg.Auth.JWTRefreshSecret, 32); err != nil {
+				return err
+			}
+		}
+		if err := validateProductionSecret("database.password", cfg.Database.Password, 8); err != nil {
+			return err
+		}
+		if cfg.Redis.Host != "" && cfg.Redis.Host != "localhost" && cfg.Redis.Host != "127.0.0.1" {
+			if err := validateProductionSecret("redis.password", cfg.Redis.Password, 8); err != nil {
+				return err
+			}
+		}
+		if cfg.Queue.RedisHost != "" && cfg.Queue.RedisHost != "localhost" && cfg.Queue.RedisHost != "127.0.0.1" {
+			if err := validateProductionSecret("queue.redis_password", cfg.Queue.RedisPassword, 8); err != nil {
+				return err
+			}
+		}
+		if cfg.SMTP.Host != "" {
+			if err := validateProductionSecret("smtp.password", cfg.SMTP.Password, 8); err != nil {
+				return err
+			}
+		}
+		if cfg.R2.Endpoint != "" || cfg.R2.BucketName != "" {
+			if err := validateProductionSecret("r2.access_key_id", cfg.R2.AccessKeyID, 8); err != nil {
+				return err
+			}
+			if err := validateProductionSecret("r2.secret_key", cfg.R2.SecretKey, 16); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func validateTrustedProxyCIDRs(cidrs []string) error {
+	for _, cidr := range cidrs {
+		cidr = strings.TrimSpace(cidr)
+		if cidr == "" {
+			continue
+		}
+		if _, _, err := net.ParseCIDR(cidr); err == nil {
+			continue
+		}
+		if ip := net.ParseIP(cidr); ip != nil {
+			continue
+		}
+		return fmt.Errorf("config: http.trusted_proxy_cidrs contains invalid CIDR or IP %q", cidr)
+	}
+	return nil
+}
+
+func validateProductionSecret(name, value string, minLen int) error {
+	value = strings.TrimSpace(value)
+	if len(value) < minLen {
+		return fmt.Errorf("config: %s must be at least %d characters in production", name, minLen)
+	}
+	lower := strings.ToLower(value)
+	for _, marker := range []string{"replace-with", "change-in-production", "changeme", "example", "dummy"} {
+		if strings.Contains(lower, marker) {
+			return fmt.Errorf("config: %s contains placeholder value in production", name)
 		}
 	}
 	return nil
@@ -739,15 +966,18 @@ func NewDefault() *Config {
 			ShutdownTime: 30 * time.Second,
 		},
 		Database: DatabaseConfig{
-			Host:            "localhost",
-			Port:            5432,
-			User:            "postgres",
-			Password:        "postgres",
-			Name:            "erg",
-			MaxOpenConns:    25,
-			MaxIdleConns:    5,
-			ConnMaxLifetime: 30 * time.Minute,
-			ConnMaxIdleTime: 5 * time.Minute,
+			Host:             "localhost",
+			Port:             5432,
+			User:             "postgres",
+			Password:         "postgres",
+			Name:             "erg",
+			MaxOpenConns:     25,
+			MaxIdleConns:     5,
+			ConnMaxLifetime:  30 * time.Minute,
+			ConnMaxIdleTime:  5 * time.Minute,
+			AutoMigrate:      false,
+			RunBackfills:     false,
+			MigrationTimeout: 2 * time.Minute,
 		},
 		MongoDB: MongoDBConfig{
 			URI:                    "mongodb://localhost:27017",
@@ -818,23 +1048,28 @@ func NewDefault() *Config {
 			BatchSize:     10,
 		},
 		Auth: AuthConfig{
-			JWTAlgorithms:    []string{"HS256"},
-			BearerPrefix:     "Bearer",
-			SkipPaths:        []string{"/healthz", "/ready", "/metrics"},
-			AccessTokenTTL:   15 * time.Minute,
-			RefreshTokenTTL:  7 * 24 * time.Hour,
-			Argon2Memory:     65536,
-			Argon2Iterations: 3,
-			MaxFailedLogin:   5,
-			BlockDuration:    15 * time.Minute,
+			JWTAlgorithms:     []string{"HS256"},
+			BearerPrefix:      "Bearer",
+			SkipPaths:         []string{"/healthz", "/ready", "/metrics"},
+			AccessTokenTTL:    15 * time.Minute,
+			RefreshTokenTTL:   7 * 24 * time.Hour,
+			Argon2Memory:      65536,
+			Argon2Iterations:  3,
+			MaxFailedLogin:    5,
+			FailedLoginWindow: 15 * time.Minute,
+			BlockDuration:     15 * time.Minute,
+			GeoBlockEnabled:   true,
+			BlockUnknownGeo:   false,
+			AllowedContinents: []string{"AS"},
 		},
 		HTTP: HTTPConfig{
-			Host:            "0.0.0.0",
-			Port:            8080,
-			ReadTimeout:     15 * time.Second,
-			WriteTimeout:    15 * time.Second,
-			IdleTimeout:     60 * time.Second,
-			ShutdownTimeout: 30 * time.Second,
+			Host:              "0.0.0.0",
+			Port:              8080,
+			ReadTimeout:       15 * time.Second,
+			WriteTimeout:      15 * time.Second,
+			IdleTimeout:       60 * time.Second,
+			ShutdownTimeout:   30 * time.Second,
+			TrustedProxyCIDRs: []string{},
 			RateLimit: RateLimitConfig{
 				Enabled:           true,
 				RequestsPerMinute: 100,

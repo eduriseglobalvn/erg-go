@@ -34,8 +34,13 @@ var (
 	ErrGoogleBridgeForbidden = errors.New("auth.service: google bridge request forbidden")
 	ErrGoogleIdentityInvalid = errors.New("auth.service: invalid google identity")
 	ErrTokenReuseDetected    = errors.New("auth.service: token reuse detected — all sessions revoked")
+	ErrTooManyAttempts       = errors.New("auth.service: too many login attempts")
+	ErrIPBlocked             = errors.New("auth.service: ip blocked")
+	ErrGeoBlocked            = errors.New("auth.service: geo blocked")
 	ErrInvalidPIN            = errors.New("auth.service: invalid or expired PIN")
 	ErrInvalidToken          = errors.New("auth.service: invalid token")
+	ErrSessionReplaced       = errors.New("auth.service: session replaced by another device")
+	ErrInvalidOldPassword    = errors.New("auth.service: invalid old password")
 )
 
 // AuthService is the top-level auth business logic.
@@ -68,10 +73,12 @@ type ServiceDeps struct {
 func NewAuthService(deps ServiceDeps) *AuthService {
 	accessSecret := deps.Config.Auth.JWTSecret
 	if accessSecret == "" {
-		accessSecret = "dev-access-secret-change-in-production"
+		accessSecret = randomDevSecret()
 	}
-	// Derive a separate refresh secret by hashing the access secret + a suffix.
-	refreshSecret := accessSecret + "-refresh"
+	refreshSecret := deps.Config.Auth.JWTRefreshSecret
+	if refreshSecret == "" {
+		refreshSecret = accessSecret + "-refresh"
+	}
 	h := sha256.Sum256([]byte(refreshSecret))
 	refreshSecret = hex.EncodeToString(h[:])
 
@@ -98,6 +105,14 @@ func NewAuthService(deps ServiceDeps) *AuthService {
 		adminEmail:    deps.Config.Auth.AdminEmail,
 		adminPassword: deps.Config.Auth.AdminPassword,
 	}
+}
+
+func randomDevSecret() string {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		panic(fmt.Errorf("auth.service: generate development JWT secret: %w", err))
+	}
+	return hex.EncodeToString(b)
 }
 
 // BootstrapAdmin ensures the super-admin account exists and has the "admin" role.
@@ -266,68 +281,77 @@ func (s *AuthService) Register(ctx context.Context, req *request.RegisterRequest
 // ─── Login ───────────────────────────────────────────────────────────────────
 
 // Login authenticates a user with email+password and issues tokens.
-func (s *AuthService) Login(ctx context.Context, req *request.LoginRequest, ip, userAgent string) (*response.AuthResponse, error) {
+func (s *AuthService) Login(ctx context.Context, req *request.LoginRequest, sec LoginSecurityContext) (*response.AuthResponse, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
 	tenantID := s.defaultTenantID()
+	sec = s.normalizeSecurityContext(sec)
 
-	// Check abuse config
-	if s.cfg.Auth.MaxFailedLogin > 0 {
-		failKey := fmt.Sprintf("auth_fail:%s", req.Email)
-		failed, _ := s.redis.Get(ctx, failKey)
-		if failed != "" {
-			// rate-limit key stores count, e.g. "3"
-			// Check if in block window
-			ttl, _ := s.redis.TTL(ctx, failKey)
-			if ttl > 0 && len(failed) >= s.cfg.Auth.MaxFailedLogin {
-				return nil, ErrAccountLocked
-			}
-		}
+	if reason, err := s.precheckLoginSecurity(ctx, tenantID, req.Email, sec); err != nil {
+		s.recordLoginAttempt(ctx, tenantID, "", req.Email, entities.LoginAttemptBlocked, reason, sec)
+		return nil, err
 	}
 
 	user, err := s.repo.FindUserByEmail(ctx, req.Email, tenantID)
 	if err != nil {
 		if errors.Is(err, repository.ErrUserNotFound) {
-			s.recordFailedLogin(ctx, req.Email)
+			if thresholdErr := s.recordFailedLogin(ctx, tenantID, req.Email, sec); thresholdErr != nil {
+				s.recordLoginAttempt(ctx, tenantID, "", req.Email, entities.LoginAttemptBlocked, entities.LoginAttemptReasonTooManyAttempts, sec)
+				return nil, thresholdErr
+			}
+			s.recordLoginAttempt(ctx, tenantID, "", req.Email, entities.LoginAttemptFailed, entities.LoginAttemptReasonInvalidCredentials, sec)
 			return nil, ErrInvalidCredentials
 		}
 		return nil, fmt.Errorf("auth.service.login: find user: %w", err)
 	}
 
 	if user.Status == entities.UserStatusBlocked || user.Status == entities.UserStatusBanned {
+		s.recordLoginAttempt(ctx, tenantID, user.ID.Hex(), req.Email, entities.LoginAttemptBlocked, entities.LoginAttemptReasonAccountLocked, sec)
 		return nil, ErrAccountLocked
 	}
 
 	if user.Status == entities.UserStatusPending && user.Provider == "local" {
+		s.recordLoginAttempt(ctx, tenantID, user.ID.Hex(), req.Email, entities.LoginAttemptBlocked, entities.LoginAttemptReasonEmailNotVerified, sec)
 		return nil, ErrEmailNotVerified
 	}
 
 	// Verify password
 	if !verifyArgon2(req.Password, user.PasswordHash) {
-		s.recordFailedLogin(ctx, req.Email)
+		if thresholdErr := s.recordFailedLogin(ctx, tenantID, req.Email, sec); thresholdErr != nil {
+			s.recordLoginAttempt(ctx, tenantID, user.ID.Hex(), req.Email, entities.LoginAttemptBlocked, entities.LoginAttemptReasonTooManyAttempts, sec)
+			return nil, thresholdErr
+		}
+		s.recordLoginAttempt(ctx, tenantID, user.ID.Hex(), req.Email, entities.LoginAttemptFailed, entities.LoginAttemptReasonInvalidCredentials, sec)
 		return nil, ErrInvalidCredentials
 	}
 
 	// Clear failed login counter on success
-	failKey := fmt.Sprintf("auth_fail:%s", req.Email)
-	_ = s.redis.Del(ctx, failKey)
+	s.resetFailedLoginCounters(ctx, tenantID, req.Email, sec.IPAddress)
+	s.recordLoginAttempt(ctx, tenantID, user.ID.Hex(), req.Email, entities.LoginAttemptSuccess, entities.LoginAttemptReasonSuccess, sec)
 
-	return s.issueTokensForUser(ctx, user, ip, userAgent, "erg")
+	return s.issueTokensForUser(ctx, user, sec, "erg")
 }
 
 // GoogleLogin trusts the frontend OAuth bridge and exchanges a verified Google identity for erg-go tokens.
-func (s *AuthService) GoogleLogin(ctx context.Context, req *request.GoogleLoginRequest, ip, userAgent string) (*response.AuthResponse, error) {
+func (s *AuthService) GoogleLogin(ctx context.Context, req *request.GoogleLoginRequest, sec LoginSecurityContext) (*response.AuthResponse, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
 	email := strings.TrimSpace(req.Email)
 	googleSub := strings.TrimSpace(req.GoogleSub)
-	if email == "" || googleSub == "" || !req.EmailVerified {
-		return nil, ErrGoogleIdentityInvalid
+	tenantID := s.defaultTenantID()
+	sec = s.normalizeSecurityContext(sec)
+
+	if reason, err := s.precheckLoginSecurity(ctx, tenantID, email, sec); err != nil {
+		s.recordLoginAttempt(ctx, tenantID, "", email, entities.LoginAttemptBlocked, reason, sec)
+		return nil, err
 	}
 
-	tenantID := s.defaultTenantID()
+	if email == "" || googleSub == "" || !req.EmailVerified {
+		s.recordLoginAttempt(ctx, tenantID, "", email, entities.LoginAttemptFailed, entities.LoginAttemptReasonGoogleInvalid, sec)
+		return nil, ErrGoogleIdentityInvalid
+	}
 
 	user, err := s.repo.FindUserByGoogleSub(ctx, googleSub, tenantID)
 	if err != nil && !errors.Is(err, repository.ErrUserNotFound) {
@@ -381,6 +405,7 @@ func (s *AuthService) GoogleLogin(ctx context.Context, req *request.GoogleLoginR
 	}
 
 	if user.Status == entities.UserStatusBlocked || user.Status == entities.UserStatusBanned {
+		s.recordLoginAttempt(ctx, tenantID, user.ID.Hex(), email, entities.LoginAttemptBlocked, entities.LoginAttemptReasonAccountLocked, sec)
 		return nil, ErrAccountLocked
 	}
 
@@ -430,26 +455,19 @@ func (s *AuthService) GoogleLogin(ctx context.Context, req *request.GoogleLoginR
 		user.Provider = "google"
 	}
 
-	return s.issueTokensForUser(ctx, user, ip, userAgent, "google")
-}
+	s.resetFailedLoginCounters(ctx, tenantID, email, sec.IPAddress)
+	s.recordLoginAttempt(ctx, tenantID, user.ID.Hex(), email, entities.LoginAttemptSuccess, entities.LoginAttemptReasonSuccess, sec)
 
-// recordFailedLogin increments the failed-login counter and sets block window.
-func (s *AuthService) recordFailedLogin(ctx context.Context, email string) {
-	if s.cfg.Auth.MaxFailedLogin <= 0 {
-		return
-	}
-	failKey := fmt.Sprintf("auth_fail:%s", email)
-	_, _ = s.redis.Incr(ctx, failKey)
-	// Set expiry on first failure
-	ttl, _ := s.redis.TTL(ctx, failKey)
-	if ttl < 0 {
-		_ = s.redis.Set(ctx, failKey, "1", s.cfg.Auth.BlockDuration)
-	}
+	return s.issueTokensForUser(ctx, user, sec, "google")
 }
 
 // issueTokensForUser creates a session and returns token pair.
-func (s *AuthService) issueTokensForUser(ctx context.Context, user *entities.User, ip, userAgent, loginProvider string) (*response.AuthResponse, error) {
+func (s *AuthService) issueTokensForUser(ctx context.Context, user *entities.User, sec LoginSecurityContext, loginProvider string) (*response.AuthResponse, error) {
 	sessionID := generateSessionID()
+	sec = s.normalizeSecurityContext(sec)
+	if sec.DeviceID == "" {
+		sec.DeviceID = sessionID
+	}
 
 	// Fetch effective permissions from AC
 	var perms []string
@@ -470,13 +488,19 @@ func (s *AuthService) issueTokensForUser(ctx context.Context, user *entities.Use
 	rtHash := hashSHA256(tokens.RefreshToken)
 	_ = rtHash // Just hash it for now, or remove if not needed here
 
+	if err := s.replaceExistingLoginSessions(ctx, user); err != nil {
+		s.log.WarnContext(ctx).Err(err).Str("user_id", user.ID.Hex()).Msg("auth.service: failed to revoke previous login sessions")
+	}
+
 	// Create session record
 	refreshHash := hashSHA256(tokens.RefreshToken)
 	session := &entities.UserSession{
 		UserID:       user.ID,
 		SessionID:    sessionID,
-		IPAddress:    ip,
-		UserAgent:    userAgent,
+		DeviceID:     sec.DeviceID,
+		DeviceName:   sec.DeviceName,
+		IPAddress:    sec.IPAddress,
+		UserAgent:    sec.UserAgent,
 		RefreshToken: refreshHash,
 		TenantID:     user.TenantID,
 		ExpiresAt:    time.Now().Add(s.cfg.Auth.RefreshTokenTTL),
@@ -500,7 +524,20 @@ func (s *AuthService) issueTokensForUser(ctx context.Context, user *entities.Use
 		RefreshToken: tokens.RefreshToken,
 		ExpiresIn:    tokens.ExpiresIn,
 		TokenType:    tokens.TokenType,
+		Session:      response.NewSessionDeviceDTO(session, true),
+		Permissions:  perms,
 	}, nil
+}
+
+func (s *AuthService) replaceExistingLoginSessions(ctx context.Context, user *entities.User) error {
+	sessions, err := s.repo.FindActiveSessions(ctx, user.ID, user.TenantID)
+	if err != nil {
+		return err
+	}
+	for i := range sessions {
+		_ = s.repo.InvalidateSessionCache(ctx, user.ID.Hex(), sessions[i].SessionID)
+	}
+	return s.repo.RevokeAllUserSessionsWithReason(ctx, user.ID, user.TenantID, "replaced_by_new_login")
 }
 
 func (s *AuthService) IsValidGoogleBridgeSecret(secret string) bool {
@@ -576,6 +613,19 @@ func (s *AuthService) RefreshToken(ctx context.Context, req *request.RefreshRequ
 	sessionID := auth.SessionIDFromClaims(claims)
 	if sessionID == "" {
 		sessionID = generateSessionID()
+	}
+	session, err := s.repo.FindSessionByID(ctx, sessionID, user.TenantID)
+	if err != nil {
+		if errors.Is(err, repository.ErrSessionNotFound) {
+			return nil, ErrSessionReplaced
+		}
+		return nil, fmt.Errorf("auth.service.refreshToken: find session: %w", err)
+	}
+	if session.IsRevoked() || time.Now().UTC().After(session.ExpiresAt) {
+		return nil, ErrSessionReplaced
+	}
+	if strings.TrimSpace(req.DeviceID) != "" && session.DeviceID != "" && strings.TrimSpace(req.DeviceID) != session.DeviceID {
+		return nil, ErrSessionReplaced
 	}
 
 	// Fetch effective permissions
@@ -785,6 +835,39 @@ func (s *AuthService) Logout(ctx context.Context, sessionID, userID string) erro
 	return nil
 }
 
+// ValidateActiveSession ensures a JWT session is still active before serving protected routes.
+func (s *AuthService) ValidateActiveSession(ctx context.Context, userID string, sessionID string) error {
+	if strings.TrimSpace(userID) == "" || strings.TrimSpace(sessionID) == "" {
+		return ErrInvalidToken
+	}
+
+	userObjectID, err := bson.ObjectIDFromHex(userID)
+	if err != nil {
+		return ErrInvalidToken
+	}
+
+	user, err := s.repo.FindUserByID(ctx, userObjectID)
+	if err != nil {
+		if errors.Is(err, repository.ErrUserNotFound) {
+			return ErrInvalidToken
+		}
+		return fmt.Errorf("auth.service.validateActiveSession: find user: %w", err)
+	}
+
+	session, err := s.repo.FindSessionByID(ctx, sessionID, user.TenantID)
+	if err != nil {
+		if errors.Is(err, repository.ErrSessionNotFound) {
+			return ErrSessionReplaced
+		}
+		return fmt.Errorf("auth.service.validateActiveSession: find session: %w", err)
+	}
+	if session.IsRevoked() || time.Now().UTC().After(session.ExpiresAt) {
+		return ErrSessionReplaced
+	}
+
+	return nil
+}
+
 // ─── GetProfile ──────────────────────────────────────────────────────────────
 
 // GetProfile returns the user profile from the JWT subject.
@@ -807,6 +890,94 @@ func (s *AuthService) GetProfile(ctx context.Context, userID string) (*response.
 
 	profile := response.NewProfileResponse(user)
 	return &profile, nil
+}
+
+// AccountProfileUpdate is the subset of profile fields supported by the LMS auth compatibility API.
+type AccountProfileUpdate struct {
+	FullName    *string
+	AvatarURL   *string
+	Phone       *string
+	Bio         *string
+	Gender      *string
+	DateOfBirth *string
+	Address     *string
+	City        *string
+	District    *string
+	JobTitle    *string
+	Region      *string
+	SocialLinks *map[string]string
+}
+
+// UpdateProfile updates the current user's profile and returns the refreshed profile.
+func (s *AuthService) UpdateProfile(ctx context.Context, userID string, req AccountProfileUpdate) (*response.ProfileResponse, error) {
+	id, err := bson.ObjectIDFromHex(userID)
+	if err != nil {
+		return nil, fmt.Errorf("auth.service.updateProfile: invalid user id: %w", err)
+	}
+
+	updates := make(map[string]any)
+	addStringUpdate(updates, "full_name", req.FullName)
+	addStringUpdate(updates, "avatar_url", req.AvatarURL)
+	addStringUpdate(updates, "phone", req.Phone)
+	addStringUpdate(updates, "bio", req.Bio)
+	addStringUpdate(updates, "gender", req.Gender)
+	addStringUpdate(updates, "date_of_birth", req.DateOfBirth)
+	addStringUpdate(updates, "address", req.Address)
+	addStringUpdate(updates, "city", req.City)
+	addStringUpdate(updates, "district", req.District)
+	addStringUpdate(updates, "job_title", req.JobTitle)
+	addStringUpdate(updates, "region", req.Region)
+	if req.SocialLinks != nil {
+		updates["social_links"] = *req.SocialLinks
+	}
+	if len(updates) == 0 {
+		return s.GetProfile(ctx, userID)
+	}
+	updates["is_profile_completed"] = true
+
+	if err := s.repo.UpdateUserIdentityFields(ctx, id, updates); err != nil {
+		if errors.Is(err, repository.ErrUserNotFound) {
+			return nil, ErrUserNotFound
+		}
+		return nil, fmt.Errorf("auth.service.updateProfile: %w", err)
+	}
+	return s.GetProfile(ctx, userID)
+}
+
+// ChangePassword validates the current password and replaces it with the new password.
+func (s *AuthService) ChangePassword(ctx context.Context, userID, oldPassword, newPassword string) error {
+	if strings.TrimSpace(newPassword) == "" || len(newPassword) < 8 {
+		return fmt.Errorf("auth.service.changePassword: new password is too short")
+	}
+	id, err := bson.ObjectIDFromHex(userID)
+	if err != nil {
+		return fmt.Errorf("auth.service.changePassword: invalid user id: %w", err)
+	}
+	user, err := s.repo.FindUserByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, repository.ErrUserNotFound) {
+			return ErrUserNotFound
+		}
+		return fmt.Errorf("auth.service.changePassword: find user: %w", err)
+	}
+	if !verifyArgon2(oldPassword, user.PasswordHash) {
+		return ErrInvalidOldPassword
+	}
+	newHash, err := hashArgon2(newPassword, s.cfg.Auth.Argon2Memory, s.cfg.Auth.Argon2Iterations)
+	if err != nil {
+		return fmt.Errorf("auth.service.changePassword: hash password: %w", err)
+	}
+	if err := s.repo.UpdatePasswordHash(ctx, user.Email, user.TenantID, newHash); err != nil {
+		return fmt.Errorf("auth.service.changePassword: update password: %w", err)
+	}
+	return nil
+}
+
+func addStringUpdate(updates map[string]any, field string, value *string) {
+	if value == nil {
+		return
+	}
+	updates[field] = strings.TrimSpace(*value)
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

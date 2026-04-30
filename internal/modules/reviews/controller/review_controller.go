@@ -9,6 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"erg.ninja/internal/dto/response"
+	"erg.ninja/internal/middleware"
 	"erg.ninja/internal/modules/reviews/dto"
 	"erg.ninja/internal/modules/reviews/service"
 	"erg.ninja/pkg/auth"
@@ -42,7 +43,7 @@ func (c *Controller) RegisterRoutes(r *gin.Engine) {
 
 	// Admin routes — JWT auth required.
 	admin := api.Group("")
-	admin.Use(c.authMiddleware())
+	admin.Use(middleware.JWTMiddleware(c.auth), middleware.RequireRoles("admin"))
 	admin.GET("/admin", c.ListAdminReviews)
 	admin.GET("/admin/all", c.ListAdminReviews)
 	admin.PATCH("/:reviewId/status", c.UpdateStatus)
@@ -55,30 +56,10 @@ func (c *Controller) RegisterRoutes(r *gin.Engine) {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-func (c *Controller) authMiddleware() gin.HandlerFunc {
-	return func(ctx *gin.Context) {
-		if c.auth == nil {
-			response.UnauthorizedGin(ctx)
-			ctx.Abort()
-			return
-		}
-		_, err := c.auth.ValidateRequest(ctx.GetHeader("Authorization"))
-		if err != nil {
-			response.UnauthorizedGin(ctx)
-			ctx.Abort()
-			return
-		}
-		ctx.Next()
-	}
-}
-
 // adminUserID extracts the admin user ID from the JWT claims.
 func (c *Controller) adminUserID(ctx *gin.Context) string {
-	if c.auth == nil {
-		return ""
-	}
-	claims, err := c.auth.ValidateRequest(ctx.GetHeader("Authorization"))
-	if err != nil || claims == nil {
+	claims := middleware.GetClaims(ctx.Request.Context())
+	if claims == nil {
 		return ""
 	}
 	if claims.UserID != "" {

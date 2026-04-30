@@ -5,11 +5,12 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
-	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
 	"erg.ninja/internal/dto/response"
+	"erg.ninja/internal/middleware"
 	"erg.ninja/internal/modules/users/dto/request"
 	resp "erg.ninja/internal/modules/users/dto/response"
 	"erg.ninja/pkg/auth"
@@ -40,7 +41,7 @@ func (c *controller) registerRoutes(r *gin.Engine) {
 	me.POST("/onboarding", c.handleOnboarding)
 
 	users := r.Group("/api/users")
-	users.Use(authMw)
+	users.Use(authMw, middleware.RequireRoles("admin"))
 	users.GET("/", c.handleListUsers)
 	users.GET("/:userID", c.handleGetUserDetail)
 	users.PUT("/:userID/status", c.handleUpdateUserStatus)
@@ -53,23 +54,23 @@ func (c *controller) registerRoutes(r *gin.Engine) {
 
 func (c *controller) jwtAuthMiddleware() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
-		authHeader := ctx.GetHeader("Authorization")
-		if authHeader == "" {
+		if c.jwtVal == nil {
 			response.UnauthorizedGin(ctx)
 			ctx.Abort()
 			return
 		}
-		token := strings.TrimPrefix(authHeader, "Bearer ")
-		claims, err := c.jwtVal.Validate(token)
+		claims, err := c.jwtVal.ValidateRequest(ctx.GetHeader("Authorization"))
 		if err != nil {
-			c.log.ErrorContext(ctx.Request.Context()).Err(err).Msg("jwtAuthMiddleware: JWT validation failed")
+			if c.log != nil {
+				c.log.ErrorContext(ctx.Request.Context()).Err(err).Msg("jwtAuthMiddleware: JWT validation failed")
+			}
 			response.UnauthorizedGin(ctx)
 			ctx.Abort()
 			return
 		}
 		sessionID := auth.SessionIDFromClaims(claims)
-		_ = sessionID
 		newCtx := context.WithValue(ctx.Request.Context(), ctxKeyUserID, claims.UserID)
+		newCtx = context.WithValue(newCtx, middleware.ClaimsKey, claims)
 
 		// Use the tenant already in the context (from TenantMiddleware)
 		// falls back to "default" if not set.
@@ -79,7 +80,14 @@ func (c *controller) jwtAuthMiddleware() gin.HandlerFunc {
 		}
 
 		newCtx = context.WithValue(newCtx, ctxKeyTenantID, tenantID)
-		newCtx = context.WithValue(newCtx, ctxKeySessionID, auth.SessionIDFromClaims(claims))
+		newCtx = context.WithValue(newCtx, ctxKeySessionID, sessionID)
+		if c.svc != nil {
+			if err := c.svc.ValidateActiveSession(newCtx, claims.UserID, sessionID, tenantID); err != nil {
+				response.ErrorGin(ctx, http.StatusUnauthorized, "AUTH_SESSION_REPLACED", "session was replaced by a newer login")
+				ctx.Abort()
+				return
+			}
+		}
 		ctx.Request = ctx.Request.WithContext(newCtx)
 		ctx.Next()
 	}
@@ -188,7 +196,7 @@ func (c *controller) handleChangePassword(ctx *gin.Context) {
 // @Tags Users
 // @Produce json
 // @Security BearerAuth
-// @Success 200 {object} map[string]any
+// @Success 200 {object} resp.SessionListResponse
 // @Router /api/users/me/sessions [get]
 func (c *controller) handleGetSessions(ctx *gin.Context) {
 	sessions, err := c.svc.GetSessions(ctx.Request.Context(), getUserID(ctx.Request.Context()), getTenantID(ctx.Request.Context()))
@@ -200,7 +208,7 @@ func (c *controller) handleGetSessions(ctx *gin.Context) {
 	for i, s := range sessions {
 		sessionList[i] = resp.NewSessionResponse(s, getSessionID(ctx.Request.Context()))
 	}
-	writeJSON(ctx, http.StatusOK, map[string]any{"sessions": sessionList})
+	writeJSON(ctx, http.StatusOK, resp.SessionListResponse{Items: sessionList})
 }
 
 // handleRevokeSession handles DELETE /api/users/me/sessions/:sessionID.
@@ -210,11 +218,11 @@ func (c *controller) handleGetSessions(ctx *gin.Context) {
 // @Produce json
 // @Security BearerAuth
 // @Param sessionID path string true "Session ID"
-// @Success 200 {object} map[string]string
+// @Success 200 {object} resp.RevokeSessionResponse
 // @Router /api/users/me/sessions/{sessionID} [delete]
 func (c *controller) handleRevokeSession(ctx *gin.Context) {
 	sessionID := ctx.Param("sessionID")
-	if err := c.svc.RevokeSession(ctx.Request.Context(), sessionID, getTenantID(ctx.Request.Context())); err != nil {
+	if err := c.svc.RevokeSession(ctx.Request.Context(), getUserID(ctx.Request.Context()), sessionID, getTenantID(ctx.Request.Context())); err != nil {
 		if errors.Is(err, ErrSessionNotFound) {
 			response.ErrorGin(ctx, http.StatusNotFound, "SESSION_NOT_FOUND", "Session not found")
 			return
@@ -222,7 +230,10 @@ func (c *controller) handleRevokeSession(ctx *gin.Context) {
 		response.ErrorGin(ctx, http.StatusInternalServerError, "REVOKE_FAILED", err.Error())
 		return
 	}
-	writeJSON(ctx, http.StatusOK, map[string]string{"message": "Session revoked successfully"})
+	writeJSON(ctx, http.StatusOK, resp.RevokeSessionResponse{
+		Success:   true,
+		RevokedAt: time.Now().UTC().Format(time.RFC3339),
+	})
 }
 
 // handleOnboarding handles POST /api/users/me/onboarding.

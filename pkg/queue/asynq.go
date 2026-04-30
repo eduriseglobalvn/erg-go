@@ -288,5 +288,10 @@ func stableTaskJitter(task *asynq.Task, max time.Duration) time.Duration {
 		_, _ = h.Write([]byte(task.Type()))
 		_, _ = h.Write(task.Payload())
 	}
-	return time.Duration(h.Sum64() % uint64(max))
+	const maxInt64AsUint64 = uint64(1<<63 - 1)
+	jitter := h.Sum64() % uint64(max)
+	if jitter > maxInt64AsUint64 {
+		return max
+	}
+	return time.Duration(int64(jitter))
 }

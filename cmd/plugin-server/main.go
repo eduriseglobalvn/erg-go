@@ -124,7 +124,15 @@ func runHealthServer(log *logger.Logger, n int) {
 	})
 	addr := ":8081"
 	log.Info().Str("addr", addr).Msg("plugin-server: health endpoint starting")
-	if err := http.ListenAndServe(addr, mux); err != nil {
+	srv := &http.Server{
+		Addr:              addr,
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      10 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
+	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Error().Err(err).Msg("plugin-server: health endpoint stopped")
 	}
 }

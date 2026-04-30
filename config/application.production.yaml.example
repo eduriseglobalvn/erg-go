@@ -1,0 +1,35 @@
+# Example production profile. Copy to application.production.yaml only if your
+# deployment model stores non-secret production config in this repo/workspace.
+# Keep real secrets in the platform secret manager or SECRET_* environment vars.
+
+app:
+  env: production
+
+http:
+  cors:
+    allowed_origins:
+      - https://erg.edu.vn
+      - https://app.erg.edu.vn
+    allow_credentials: true
+
+logging:
+  level: info
+  format: json
+
+telemetry:
+  enabled: true
+  environment: production
+
+mongodb:
+  read_preference: primaryPreferred
+  max_pool_size: 300
+  min_pool_size: 30
+
+redis:
+  tls: true
+  pool_size: 100
+  min_idle_conns: 20
+
+queue:
+  redis_tls: true
+  concurrency: 50

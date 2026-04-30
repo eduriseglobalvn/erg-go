@@ -2,8 +2,9 @@ package discovery
 
 import (
 	"context"
+	crypto_rand "crypto/rand"
 	"fmt"
-	"math/rand"
+	"math/big"
 	"sync"
 	"time"
 
@@ -131,5 +132,16 @@ func PickFirst(svcs []Service) (Service, error) {
 	if len(valid) == 0 {
 		return Service{}, fmt.Errorf("discovery: pick: all instances expired")
 	}
-	return valid[rand.Intn(len(valid))], nil
+	return valid[randomServiceIndex(len(valid))], nil
+}
+
+func randomServiceIndex(length int) int {
+	if length <= 1 {
+		return 0
+	}
+	n, err := crypto_rand.Int(crypto_rand.Reader, big.NewInt(int64(length)))
+	if err != nil {
+		return int(time.Now().UnixNano() % int64(length))
+	}
+	return int(n.Int64())
 }

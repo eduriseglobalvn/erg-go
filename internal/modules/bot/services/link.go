@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"strings"
@@ -235,9 +236,9 @@ func generateCode(length int) string {
 	charset := linkCodeCharset
 	b := make([]byte, length)
 	if _, err := rand.Read(b); err != nil {
-		now := time.Now().UnixNano()
+		seed := sha256.Sum256([]byte(fmt.Sprintf("%d", time.Now().UnixNano())))
 		for i := range b {
-			b[i] = byte(now >> (uint(i%8) * 8))
+			b[i] = seed[i%len(seed)]
 		}
 	}
 	for i := range b {

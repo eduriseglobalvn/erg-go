@@ -5,10 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/netip"
 	"runtime"
+	"strings"
 	"time"
 
-	"github.com/redis/go-redis/v9"
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/host"
 	"github.com/shirou/gopsutil/v4/mem"
@@ -42,6 +43,16 @@ type Service struct {
 	pg    *database.GORMPostgresClient
 	redis *cache.RedisClient
 	log   *logger.Logger
+}
+
+type FirewallRule struct {
+	IP        string     `json:"ip,omitempty"`
+	Entry     string     `json:"entry,omitempty"`
+	Reason    string     `json:"reason,omitempty"`
+	Source    string     `json:"source,omitempty"`
+	CreatedAt time.Time  `json:"createdAt,omitempty"`
+	BlockedAt time.Time  `json:"blockedAt,omitempty"`
+	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
 }
 
 func NewService(mongo *database.MongoClient, pg *database.GORMPostgresClient, redis *cache.RedisClient, log *logger.Logger) *Service {
@@ -87,21 +98,49 @@ func (s *Service) GetSystemStatus(ctx context.Context) (*SystemStatus, error) {
 
 // ─── IP Firewall Logic ───────────────────────────────────────────────────────
 
+const (
+	ipBlockedKeyPrefix   = "ip_blocked:"
+	ipAllowlistKeyPrefix = "ip_allowlisted:"
+)
+
 func (s *Service) BlockIP(ctx context.Context, ip string, duration time.Duration) error {
-	key := fmt.Sprintf("ip_blocked:%s", ip)
+	return s.BlockIPWithMetadata(ctx, ip, duration, "manual", "operations")
+}
+
+func (s *Service) BlockIPWithMetadata(ctx context.Context, ip string, duration time.Duration, reason, source string) error {
+	if s.redis == nil || s.redis.Client() == nil {
+		return fmt.Errorf("operations: redis client unavailable")
+	}
+	ip = strings.TrimSpace(ip)
+	key := ipBlockedKeyPrefix + ip
 	if duration <= 0 {
 		duration = 365 * 24 * time.Hour // 1 year
 	}
-	err := s.redis.Client().Set(ctx, key, "true", duration).Err()
+	expiresAt := time.Now().UTC().Add(duration)
+	record := FirewallRule{
+		IP:        ip,
+		Reason:    strings.TrimSpace(reason),
+		Source:    strings.TrimSpace(source),
+		BlockedAt: time.Now().UTC(),
+		ExpiresAt: &expiresAt,
+	}
+	raw, err := json.Marshal(record)
+	if err != nil {
+		return fmt.Errorf("operations: marshal firewall block: %w", err)
+	}
+	err = s.redis.Client().Set(ctx, key, string(raw), duration).Err()
 	if err != nil {
 		return fmt.Errorf("operations: failed to block ip: %w", err)
 	}
-	s.log.Info().Str("ip", ip).Msg("operations: ip blocked")
+	s.log.Info().Str("ip", ip).Str("reason", reason).Msg("operations: ip blocked")
 	return nil
 }
 
 func (s *Service) UnblockIP(ctx context.Context, ip string) error {
-	key := fmt.Sprintf("ip_blocked:%s", ip)
+	if s.redis == nil || s.redis.Client() == nil {
+		return fmt.Errorf("operations: redis client unavailable")
+	}
+	key := ipBlockedKeyPrefix + strings.TrimSpace(ip)
 	err := s.redis.Client().Del(ctx, key).Err()
 	if err != nil {
 		return fmt.Errorf("operations: failed to unblock ip: %w", err)
@@ -111,19 +150,22 @@ func (s *Service) UnblockIP(ctx context.Context, ip string) error {
 }
 
 func (s *Service) IsIPBlocked(ctx context.Context, ip string) (bool, error) {
-	key := fmt.Sprintf("ip_blocked:%s", ip)
-	val, err := s.redis.Client().Get(ctx, key).Result()
+	if s.redis == nil || s.redis.Client() == nil {
+		return false, fmt.Errorf("operations: redis client unavailable")
+	}
+	key := ipBlockedKeyPrefix + strings.TrimSpace(ip)
+	n, err := s.redis.Client().Exists(ctx, key).Result()
 	if err != nil {
-		if err == redis.Nil {
-			return false, nil
-		}
 		return false, err
 	}
-	return val == "true", nil
+	return n > 0, nil
 }
 
 func (s *Service) ListBlockedIPs(ctx context.Context) ([]map[string]any, error) {
-	keys, err := s.redis.Client().Keys(ctx, "ip_blocked:*").Result()
+	if s.redis == nil || s.redis.Client() == nil {
+		return nil, fmt.Errorf("operations: redis client unavailable")
+	}
+	keys, err := s.redis.Client().Keys(ctx, ipBlockedKeyPrefix+"*").Result()
 	if err != nil {
 		return nil, err
 	}
@@ -131,13 +173,121 @@ func (s *Service) ListBlockedIPs(ctx context.Context) ([]map[string]any, error) 
 	records := make([]map[string]any, 0, len(keys))
 	for _, key := range keys {
 		ttl, _ := s.redis.Client().PTTL(ctx, key).Result()
-		ip := key[11:] // strip "ip_blocked:"
-		records = append(records, map[string]any{
+		raw, _ := s.redis.Client().Get(ctx, key).Result()
+		ip := strings.TrimPrefix(key, ipBlockedKeyPrefix)
+		record := map[string]any{
 			"ip":  ip,
 			"ttl": ttl.Milliseconds(),
-		})
+		}
+		var meta FirewallRule
+		if err := json.Unmarshal([]byte(raw), &meta); err == nil {
+			record["reason"] = meta.Reason
+			record["source"] = meta.Source
+			record["blockedAt"] = meta.BlockedAt
+			record["expiresAt"] = meta.ExpiresAt
+		}
+		records = append(records, record)
 	}
 	return records, nil
+}
+
+func (s *Service) AllowlistIP(ctx context.Context, entry, reason string, duration time.Duration) error {
+	if s.redis == nil || s.redis.Client() == nil {
+		return fmt.Errorf("operations: redis client unavailable")
+	}
+	entry = strings.TrimSpace(entry)
+	if !isValidIPOrCIDR(entry) {
+		return fmt.Errorf("operations: invalid allowlist entry %q", entry)
+	}
+	record := FirewallRule{
+		Entry:     entry,
+		Reason:    strings.TrimSpace(reason),
+		Source:    "operations",
+		CreatedAt: time.Now().UTC(),
+	}
+	if duration > 0 {
+		expiresAt := record.CreatedAt.Add(duration)
+		record.ExpiresAt = &expiresAt
+	}
+	raw, err := json.Marshal(record)
+	if err != nil {
+		return fmt.Errorf("operations: marshal allowlist record: %w", err)
+	}
+	if err := s.redis.Client().Set(ctx, ipAllowlistKeyPrefix+entry, string(raw), duration).Err(); err != nil {
+		return fmt.Errorf("operations: failed to allowlist ip: %w", err)
+	}
+	return nil
+}
+
+func (s *Service) RemoveAllowlistIP(ctx context.Context, entry string) error {
+	if s.redis == nil || s.redis.Client() == nil {
+		return fmt.Errorf("operations: redis client unavailable")
+	}
+	return s.redis.Client().Del(ctx, ipAllowlistKeyPrefix+strings.TrimSpace(entry)).Err()
+}
+
+func (s *Service) ListAllowlistedIPs(ctx context.Context) ([]map[string]any, error) {
+	if s.redis == nil || s.redis.Client() == nil {
+		return nil, fmt.Errorf("operations: redis client unavailable")
+	}
+	keys, err := s.redis.Client().Keys(ctx, ipAllowlistKeyPrefix+"*").Result()
+	if err != nil {
+		return nil, err
+	}
+	records := make([]map[string]any, 0, len(keys))
+	for _, key := range keys {
+		ttl, _ := s.redis.Client().PTTL(ctx, key).Result()
+		entry := strings.TrimPrefix(key, ipAllowlistKeyPrefix)
+		record := map[string]any{"entry": entry, "ttl": ttl.Milliseconds()}
+		raw, _ := s.redis.Client().Get(ctx, key).Result()
+		var meta FirewallRule
+		if err := json.Unmarshal([]byte(raw), &meta); err == nil {
+			record["reason"] = meta.Reason
+			record["source"] = meta.Source
+			record["createdAt"] = meta.CreatedAt
+			record["expiresAt"] = meta.ExpiresAt
+		}
+		records = append(records, record)
+	}
+	return records, nil
+}
+
+func (s *Service) IsIPAllowlisted(ctx context.Context, ip string) (bool, error) {
+	if s.redis == nil || s.redis.Client() == nil {
+		return false, fmt.Errorf("operations: redis client unavailable")
+	}
+	keys, err := s.redis.Client().Keys(ctx, ipAllowlistKeyPrefix+"*").Result()
+	if err != nil {
+		return false, err
+	}
+	for _, key := range keys {
+		entry := strings.TrimPrefix(key, ipAllowlistKeyPrefix)
+		if ipMatchesAllowlistEntry(ip, entry) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func isValidIPOrCIDR(entry string) bool {
+	entry = strings.TrimSpace(entry)
+	if _, err := netip.ParseAddr(entry); err == nil {
+		return true
+	}
+	_, err := netip.ParsePrefix(entry)
+	return err == nil
+}
+
+func ipMatchesAllowlistEntry(ip, entry string) bool {
+	addr, err := netip.ParseAddr(strings.TrimSpace(ip))
+	if err != nil {
+		return false
+	}
+	if prefix, err := netip.ParsePrefix(strings.TrimSpace(entry)); err == nil {
+		return prefix.Contains(addr)
+	}
+	allowedAddr, err := netip.ParseAddr(strings.TrimSpace(entry))
+	return err == nil && allowedAddr == addr
 }
 
 func (s *Service) ListLogs(ctx context.Context, page, limit int) ([]map[string]any, int64, error) {

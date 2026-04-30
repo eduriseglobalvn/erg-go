@@ -2,7 +2,7 @@
 # Usage: docker build -f Dockerfile.base --target builder --tag erg-base .
 
 # ── Stage 1: Builder ──────────────────────────────────────────────────────────
-FROM golang:1.22-alpine AS builder
+FROM golang:1.25-alpine AS builder
 
 # Install build dependencies.
 RUN apk add --no-cache git ca-certificates tzdata
@@ -20,10 +20,9 @@ COPY . .
 ARG CGO_ENABLED=0
 ARG GOOS=linux
 
-RUN CGO_ENABLED=${CGO_ENABLED} GOOS=${GOOS} go build -ldflags="-s -w" -o /bin/bot-service ./cmd/bot-service && \
-    CGO_ENABLED=${CGO_ENABLED} GOOS=${GOOS} go build -ldflags="-s -w" -o /bin/notification-service ./cmd/notification-service && \
-    CGO_ENABLED=${CGO_ENABLED} GOOS=${GOOS} go build -ldflags="-s -w" -o /bin/crawler-service ./cmd/crawler-service && \
-    CGO_ENABLED=${CGO_ENABLED} GOOS=${GOOS} go build -ldflags="-s -w" -o /bin/trending-service ./cmd/trending-service
+RUN CGO_ENABLED=${CGO_ENABLED} GOOS=${GOOS} go build -ldflags="-s -w" -o /bin/erg-server ./cmd/server && \
+    CGO_ENABLED=${CGO_ENABLED} GOOS=${GOOS} go build -ldflags="-s -w" -o /bin/plugin-server ./cmd/plugin-server && \
+    CGO_ENABLED=${CGO_ENABLED} GOOS=${GOOS} go build -ldflags="-s -w" -o /bin/db-migrate ./cmd/db-migrate
 
 # ── Stage 2: Runtime (scratch) ───────────────────────────────────────────────
 FROM scratch AS runtime
@@ -41,4 +40,5 @@ ENV TZ=UTC
 ENV GODEBUG=http2server=0
 
 # Default entrypoint — override per service in docker-compose.
-ENTRYPOINT ["/bin/bot-service"]
+EXPOSE 8080
+ENTRYPOINT ["/bin/erg-server"]

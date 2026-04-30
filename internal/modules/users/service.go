@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"errors"
+	"strings"
+	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 
@@ -99,7 +101,7 @@ func (s *Service) ChangePassword(ctx context.Context, userID, tenantID string, r
 	if err := s.repo.UpdatePasswordHash(ctx, id, tenantID, hash); err != nil {
 		return err
 	}
-	return s.repo.RevokeAllUserSessions(ctx, id, tenantID)
+	return s.repo.RevokeAllUserSessionsWithReason(ctx, id, tenantID, "password_changed")
 }
 
 func (s *Service) Onboarding(ctx context.Context, userID, tenantID string, req *request.OnboardingRequest) error {
@@ -131,8 +133,30 @@ func (s *Service) GetSessions(ctx context.Context, userID, tenantID string) ([]e
 	return s.repo.FindActiveSessions(ctx, id, tenantID)
 }
 
-func (s *Service) RevokeSession(ctx context.Context, sessionID, tenantID string) error {
-	return s.repo.RevokeSession(ctx, sessionID, tenantID)
+func (s *Service) RevokeSession(ctx context.Context, userID, sessionID, tenantID string) error {
+	id, err := bson.ObjectIDFromHex(userID)
+	if err != nil {
+		return ErrUserNotFound
+	}
+	return s.repo.RevokeUserSessionWithReason(ctx, id, sessionID, tenantID, "logout")
+}
+
+func (s *Service) ValidateActiveSession(ctx context.Context, userID, sessionID, tenantID string) error {
+	if strings.TrimSpace(userID) == "" || strings.TrimSpace(sessionID) == "" {
+		return ErrSessionNotFound
+	}
+	id, err := bson.ObjectIDFromHex(userID)
+	if err != nil {
+		return ErrUserNotFound
+	}
+	session, err := s.repo.FindSessionByID(ctx, sessionID, tenantID)
+	if err != nil {
+		return err
+	}
+	if session.UserID != id || session.RevokedAt != nil || time.Now().UTC().After(session.ExpiresAt) {
+		return ErrSessionNotFound
+	}
+	return nil
 }
 
 func (s *Service) ListUsers(ctx context.Context, tenantID string, query *request.ListUsersQuery) ([]entities.User, int64, error) {

@@ -5,6 +5,7 @@ import (
 	"context"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -120,7 +121,7 @@ func New(opts ...Option) *Logger {
 				break
 			}
 		}
-		return short + ":" + string(rune('0'+line/100)) + string(rune('0'+(line/10)%10)) + string(rune('0'+line%10))
+		return short + ":" + strconv.Itoa(line)
 	}
 
 	l.zl = zerolog.New(os.Stdout).
@@ -204,7 +205,7 @@ func (l *Logger) WithUserID(id string) *Logger {
 
 // WithField adds a single field to the logger.
 func (l *Logger) WithField(key string, value interface{}) *Logger {
-	zl := l.zl.With().Interface(key, value).Logger()
+	zl := l.zl.With().Interface(key, RedactValue(key, value)).Logger()
 	return &Logger{zl: zl, service: l.service}
 }
 
@@ -212,9 +213,20 @@ func (l *Logger) WithField(key string, value interface{}) *Logger {
 func (l *Logger) WithFields(fields map[string]interface{}) *Logger {
 	zc := l.zl.With()
 	for k, v := range fields {
-		zc = zc.Interface(k, v)
+		zc = zc.Interface(k, RedactValue(k, v))
 	}
 	return &Logger{zl: zc.Logger(), service: l.service}
+}
+
+// RedactValue masks sensitive field values before they enter structured logs.
+func RedactValue(key string, value interface{}) interface{} {
+	normalized := strings.ToLower(strings.ReplaceAll(strings.TrimSpace(key), "_", "-"))
+	for _, marker := range []string{"authorization", "cookie", "password", "secret", "token", "api-key", "apikey", "access-key"} {
+		if strings.Contains(normalized, marker) {
+			return "[REDACTED]"
+		}
+	}
+	return value
 }
 
 // Debug logs a debug message.

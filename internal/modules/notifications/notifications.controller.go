@@ -65,30 +65,31 @@ func (c *Controller) RegisterRoutes(r *gin.Engine, jwtVal *auth.JWTValidator) {
 
 	// List notifications (paginated).
 	api.GET("/", c.List)
-	// Get single notification.
-	api.GET("/:id", c.Get)
 	// Send a notification.
 	api.POST("/send", c.Send)
 	// Batch send.
 	api.POST("/batch", c.BatchSend)
-	// Cancel a notification.
-	api.POST("/:id/cancel", c.Cancel)
-	// Resend a failed notification.
-	api.POST("/:id/resend", c.Resend)
 	// Stats.
 	api.GET("/stats", c.Stats)
-	// Mark notification as read.
-	api.POST("/:id/read", c.MarkAsRead)
-	api.PATCH("/:id/read", c.MarkAsRead)
-	api.PATCH("/read-all", c.MarkAllAsRead)
-	api.DELETE("/:id", c.Delete)
 	// Unread count for current user.
 	api.GET("/unread-count", c.UnreadCount)
+	api.PATCH("/read-all", c.MarkAllAsRead)
 
 	// Preferences.
 	prefs := api.Group("/preferences") // Use 'api' group to inherit middleware
 	prefs.GET("/", c.GetPreference)
 	prefs.PUT("/", c.UpsertPreference)
+
+	// Get single notification.
+	api.GET("/:id", c.Get)
+	// Cancel a notification.
+	api.POST("/:id/cancel", c.Cancel)
+	// Resend a failed notification.
+	api.POST("/:id/resend", c.Resend)
+	// Mark notification as read.
+	api.POST("/:id/read", c.MarkAsRead)
+	api.PATCH("/:id/read", c.MarkAsRead)
+	api.DELETE("/:id", c.Delete)
 
 	// Channel testing (also protected)
 	channels := r.Group("/api/channels")

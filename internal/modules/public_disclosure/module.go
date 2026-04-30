@@ -8,6 +8,7 @@ import (
 	"erg.ninja/internal/modules/documents"
 	"erg.ninja/internal/modules/public_disclosure/repository"
 	"erg.ninja/internal/modules/public_disclosure/service"
+	"erg.ninja/pkg/auth"
 	"erg.ninja/pkg/config"
 	"erg.ninja/pkg/database"
 	"erg.ninja/pkg/logger"
@@ -20,6 +21,7 @@ type Deps struct {
 	Cfg               *config.Config
 	TenantMongoClient *tenant.TenantMongoClient
 	DocSvc            *documents.Service
+	JWTValidator      *auth.JWTValidator
 }
 
 type Module struct {
@@ -32,7 +34,7 @@ type Module struct {
 func NewModule(deps Deps) *Module {
 	repo := repository.NewRepository(deps.Mongo)
 	svc := service.NewService(repo, deps.DocSvc, deps.Log)
-	ctrl := NewController(svc, deps.Log)
+	ctrl := NewController(svc, deps.Log, deps.JWTValidator)
 
 	return &Module{
 		deps: deps,

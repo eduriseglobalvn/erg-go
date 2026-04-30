@@ -13,6 +13,7 @@ import (
 	"github.com/go-playground/validator/v10"
 
 	"erg.ninja/internal/dto/response"
+	"erg.ninja/internal/middleware"
 	"erg.ninja/internal/modules/recruitment/dto"
 	"erg.ninja/pkg/auth"
 	"erg.ninja/pkg/logger"
@@ -63,7 +64,7 @@ func (c *Controller) RegisterRoutes(r *gin.Engine) {
 
 	// Admin routes — JWT auth applied via middleware.
 	admin := api.Group("")
-	admin.Use(c.authMiddleware())
+	admin.Use(middleware.JWTMiddleware(c.auth), middleware.RequireRoles("admin"))
 	admin.POST("/jobs", c.CreateJob)
 	admin.PUT("/jobs/:id", c.UpdateJob)
 	admin.DELETE("/jobs/:id", c.DeleteJob)
@@ -80,23 +81,6 @@ func (c *Controller) RegisterRoutes(r *gin.Engine) {
 
 func (c *Controller) getTenant(ctx *gin.Context) string {
 	return tenant.FromContext(ctx.Request.Context())
-}
-
-func (c *Controller) authMiddleware() gin.HandlerFunc {
-	return func(ctx *gin.Context) {
-		if c.auth == nil {
-			response.UnauthorizedGin(ctx)
-			ctx.Abort()
-			return
-		}
-		_, err := c.auth.ValidateRequest(ctx.GetHeader("Authorization"))
-		if err != nil {
-			response.UnauthorizedGin(ctx)
-			ctx.Abort()
-			return
-		}
-		ctx.Next()
-	}
 }
 
 // parseQueryInt parses a query param as int, returns default if absent or invalid.
@@ -310,11 +294,8 @@ func (c *Controller) CreateJob(ctx *gin.Context) {
 	}
 
 	req.TenantID = tenantID
-	if c.auth != nil {
-		claims, err := c.auth.ValidateRequest(ctx.GetHeader("Authorization"))
-		if err == nil && claims != nil {
-			req.CreatedBy = claims.Subject
-		}
+	if claims := middleware.GetClaims(ctx.Request.Context()); claims != nil {
+		req.CreatedBy = claims.Subject
 	}
 
 	job, err := c.svc.CreateJob(ctx.Request.Context(), &req)

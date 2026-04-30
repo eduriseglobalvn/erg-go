@@ -1,0 +1,13 @@
+title = "erg-go secret scanning"
+
+[allowlist]
+description = "Repository-owned false positives and non-secret placeholders."
+paths = [
+  '''(^|/)\.env\.example$''',
+  '''(^|/)docs/.*\.md$''',
+]
+
+regexes = [
+  '''replace-with-[A-Za-z0-9-]+''',
+  '''example\.(com|org|net)''',
+]

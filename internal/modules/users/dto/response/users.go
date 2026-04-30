@@ -71,27 +71,48 @@ func NewUserResponse(u *entities.User) UserResponse {
 
 // SessionResponse is the DTO for a user session (GET /users/me/sessions).
 type SessionResponse struct {
-	ID         string `json:"id"`
-	SessionID  string `json:"sessionId"`
-	IPAddress  string `json:"ipAddress"`
-	UserAgent  string `json:"userAgent"`
-	DeviceType string `json:"deviceType"`
-	IsCurrent  bool   `json:"isCurrent"`
-	ExpiresAt  string `json:"expiresAt"`
-	CreatedAt  string `json:"createdAt"`
+	SessionID     string `json:"sessionId"`
+	DeviceID      string `json:"deviceId,omitempty"`
+	DeviceName    string `json:"deviceName,omitempty"`
+	IPAddress     string `json:"ipAddress,omitempty"`
+	UserAgent     string `json:"userAgent,omitempty"`
+	DeviceType    string `json:"deviceType"`
+	Current       bool   `json:"current"`
+	Revoked       bool   `json:"revoked"`
+	RevokedReason string `json:"revokedReason,omitempty"`
+	ExpiresAt     string `json:"expiresAt"`
+	CreatedAt     string `json:"createdAt"`
+	LastSeenAt    string `json:"lastSeenAt"`
+}
+
+type SessionListResponse struct {
+	Items []SessionResponse `json:"items"`
+}
+
+type RevokeSessionResponse struct {
+	Success   bool   `json:"success"`
+	RevokedAt string `json:"revokedAt"`
 }
 
 // NewSessionResponse constructs a SessionResponse from a UserSession entity.
 func NewSessionResponse(s entities.UserSession, currentSessionID string) SessionResponse {
+	lastSeen := s.LastActiveAt
+	if lastSeen.IsZero() {
+		lastSeen = s.CreatedAt
+	}
 	return SessionResponse{
-		ID:         s.ID.Hex(),
-		SessionID:  s.SessionID,
-		IPAddress:  s.IPAddress,
-		UserAgent:  s.UserAgent,
-		DeviceType: parseDeviceType(s.UserAgent),
-		IsCurrent:  s.SessionID == currentSessionID,
-		ExpiresAt:  s.ExpiresAt.Format(time.RFC3339),
-		CreatedAt:  s.CreatedAt.Format(time.RFC3339),
+		SessionID:     s.SessionID,
+		DeviceID:      s.DeviceID,
+		DeviceName:    s.DeviceName,
+		IPAddress:     s.IPAddress,
+		UserAgent:     s.UserAgent,
+		DeviceType:    parseDeviceType(s.UserAgent),
+		Current:       s.SessionID == currentSessionID,
+		Revoked:       s.RevokedAt != nil,
+		RevokedReason: s.RevokedReason,
+		ExpiresAt:     s.ExpiresAt.Format(time.RFC3339),
+		CreatedAt:     s.CreatedAt.Format(time.RFC3339),
+		LastSeenAt:    lastSeen.Format(time.RFC3339),
 	}
 }
 

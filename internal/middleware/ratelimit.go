@@ -2,6 +2,7 @@
 package middleware
 
 import (
+	"context"
 	"net/http"
 	"sync"
 	"time"
@@ -29,6 +30,9 @@ type rateLimiter struct {
 
 // newRateLimiter creates a new rate limiter with the given requests per minute limit.
 func newRateLimiter(requestsPerMinute int) *rateLimiter {
+	if requestsPerMinute <= 0 {
+		requestsPerMinute = 60
+	}
 	return &rateLimiter{
 		requests: make(map[string][]time.Time),
 		limit:    requestsPerMinute,
@@ -68,6 +72,9 @@ type RedisRateLimiter struct {
 
 // NewRedisRateLimiter creates a Redis-backed rate limiter.
 func NewRedisRateLimiter(redis *cache.RedisClient, requestsPerMinute int) *RedisRateLimiter {
+	if requestsPerMinute <= 0 {
+		requestsPerMinute = 60
+	}
 	return &RedisRateLimiter{
 		redis: redis,
 		limit: requestsPerMinute,
@@ -77,10 +84,21 @@ func NewRedisRateLimiter(redis *cache.RedisClient, requestsPerMinute int) *Redis
 // Allow implements the interface{Allow(string) bool} check.
 // Uses Redis INCR + EXPIRE for a simple fixed-window rate limit.
 func (r *RedisRateLimiter) Allow(key string) bool {
-	// TODO: implement with Redis INCR + EXPIRE
-	// redis.Incr(ctx, "ratelimit:"+key)
-	// redis.Expire(ctx, "ratelimit:"+key, time.Minute)
-	return true
+	if r == nil || r.redis == nil || r.limit <= 0 {
+		return true
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
+	defer cancel()
+
+	count, err := r.redis.Incr(ctx, "ratelimit:"+key)
+	if err != nil {
+		return false
+	}
+	if count == 1 {
+		_ = r.redis.Expire(ctx, "ratelimit:"+key, time.Minute)
+	}
+	return count <= int64(r.limit)
 }
 
 // RateLimit creates a Gin middleware for rate limiting.
@@ -95,7 +113,7 @@ func RateLimit(redis *cache.RedisClient, cfg RateLimitConfig) gin.HandlerFunc {
 	}
 
 	return func(c *gin.Context) {
-		key := c.ClientIP()
+		key := clientIPKey(c)
 		if !limiter.Allow(key) {
 			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
 				"error": gin.H{
@@ -111,22 +129,20 @@ func RateLimit(redis *cache.RedisClient, cfg RateLimitConfig) gin.HandlerFunc {
 
 // RateLimitWithKey creates a rate limiter that uses a custom key function.
 func RateLimitWithKey(redis *cache.RedisClient, cfg RateLimitConfig, keyFunc func(*gin.Context) string) gin.HandlerFunc {
+	var limiter interface{ Allow(string) bool }
+	if redis != nil {
+		limiter = NewRedisRateLimiter(redis, cfg.RequestsPerMinute)
+	} else {
+		limiter = newRateLimiter(cfg.RequestsPerMinute)
+	}
+
 	return func(c *gin.Context) {
 		key := keyFunc(c)
 		if key == "" {
-			key = c.ClientIP()
+			key = clientIPKey(c)
 		}
 
-		var allowed bool
-		if redis != nil {
-			rl := NewRedisRateLimiter(redis, cfg.RequestsPerMinute)
-			allowed = rl.Allow(key)
-		} else {
-			rl := newRateLimiter(cfg.RequestsPerMinute)
-			allowed = rl.Allow(key)
-		}
-
-		if !allowed {
+		if !limiter.Allow(key) {
 			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
 				"error": gin.H{
 					"code":    "ERR_RATE_LIMITED",
@@ -141,10 +157,20 @@ func RateLimitWithKey(redis *cache.RedisClient, cfg RateLimitConfig, keyFunc fun
 
 // IPKeyFunc returns the client IP as the rate limit key.
 func IPKeyFunc(c *gin.Context) string {
-	return c.ClientIP()
+	return clientIPKey(c)
 }
 
 // UserKeyFunc returns the authenticated user ID as the rate limit key.
 func UserKeyFunc(c *gin.Context) string {
 	return GetUserID(c)
+}
+
+func clientIPKey(c *gin.Context) string {
+	if c == nil {
+		return ""
+	}
+	if ip := GetRealIP(c.Request.Context()); ip != "" {
+		return ip
+	}
+	return c.ClientIP()
 }

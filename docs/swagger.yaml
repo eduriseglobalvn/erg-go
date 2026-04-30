@@ -276,16 +276,26 @@ definitions:
     type: object
   erg_ninja_internal_modules_auth_dto_request.LoginRequest:
     properties:
+      deviceFingerprint:
+        type: string
+      deviceId:
+        type: string
+      deviceName:
+        type: string
       email:
         type: string
       password:
         type: string
+      rememberMe:
+        type: boolean
     required:
     - email
     - password
     type: object
   erg_ninja_internal_modules_auth_dto_request.RefreshRequest:
     properties:
+      deviceId:
+        type: string
       refreshToken:
         type: string
     required:
@@ -357,8 +367,14 @@ definitions:
         type: string
       expiresIn:
         type: integer
+      permissions:
+        items:
+          type: string
+        type: array
       refreshToken:
         type: string
+      session:
+        $ref: '#/definitions/erg_ninja_internal_modules_auth_dto_response.SessionDeviceDTO'
       tokenType:
         type: string
       user:
@@ -400,6 +416,31 @@ definitions:
           type: string
         type: array
       status:
+        type: string
+    type: object
+  erg_ninja_internal_modules_auth_dto_response.SessionDeviceDTO:
+    properties:
+      createdAt:
+        type: string
+      current:
+        type: boolean
+      deviceId:
+        type: string
+      deviceName:
+        type: string
+      expiresAt:
+        type: string
+      ipAddress:
+        type: string
+      lastSeenAt:
+        type: string
+      revoked:
+        type: boolean
+      revokedReason:
+        type: string
+      sessionId:
+        type: string
+      userAgent:
         type: string
     type: object
   erg_ninja_internal_modules_auth_dto_response.TokenResponse:
@@ -1035,7 +1076,6 @@ definitions:
         type: integer
       distribution:
         additionalProperties:
-          format: int64
           type: integer
         type: object
     type: object
@@ -1104,6 +1144,47 @@ definitions:
         type: integer
       totalPages:
         type: integer
+    type: object
+  erg_ninja_internal_modules_users_dto_response.RevokeSessionResponse:
+    properties:
+      revokedAt:
+        type: string
+      success:
+        type: boolean
+    type: object
+  erg_ninja_internal_modules_users_dto_response.SessionListResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/erg_ninja_internal_modules_users_dto_response.SessionResponse'
+        type: array
+    type: object
+  erg_ninja_internal_modules_users_dto_response.SessionResponse:
+    properties:
+      createdAt:
+        type: string
+      current:
+        type: boolean
+      deviceId:
+        type: string
+      deviceName:
+        type: string
+      deviceType:
+        type: string
+      expiresAt:
+        type: string
+      ipAddress:
+        type: string
+      lastSeenAt:
+        type: string
+      revoked:
+        type: boolean
+      revokedReason:
+        type: string
+      sessionId:
+        type: string
+      userAgent:
+        type: string
     type: object
   erg_ninja_internal_modules_users_dto_response.UserDetailResponse:
     properties:
@@ -6320,8 +6401,7 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/erg_ninja_internal_modules_users_dto_response.SessionListResponse'
       security:
       - BearerAuth: []
       summary: List user sessions
@@ -6342,9 +6422,7 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/erg_ninja_internal_modules_users_dto_response.RevokeSessionResponse'
       security:
       - BearerAuth: []
       summary: Revoke a session

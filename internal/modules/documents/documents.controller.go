@@ -7,35 +7,57 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
 	"erg.ninja/internal/dto/response"
+	"erg.ninja/internal/middleware"
 	"erg.ninja/internal/modules/documents/dto"
+	"erg.ninja/pkg/auth"
 	"erg.ninja/pkg/logger"
 	"erg.ninja/pkg/tenant"
 )
 
 // Controller handles HTTP requests for the documents module.
 type Controller struct {
-	svc *Service
-	log *logger.Logger
+	svc          *Service
+	log          *logger.Logger
+	jwtValidator *auth.JWTValidator
 }
 
 // NewController creates a new documents controller.
-func NewController(svc *Service, log *logger.Logger) *Controller {
-	return &Controller{svc: svc, log: log}
+func NewController(svc *Service, log *logger.Logger, jwtValidator *auth.JWTValidator) *Controller {
+	return &Controller{svc: svc, log: log, jwtValidator: jwtValidator}
 }
 
 // RegisterRoutes mounts the documents REST API routes.
 func (c *Controller) RegisterRoutes(r *gin.Engine) {
-	docs := r.Group("/documents")
+	c.registerDocumentRoutes(r.Group("/documents"))
+	c.registerDocumentRoutes(r.Group("/api/documents"))
+}
+
+func (c *Controller) registerDocumentRoutes(docs *gin.RouterGroup) {
+	docs.Use(middleware.JWTMiddleware(c.jwtValidator))
 	docs.POST("/", c.Upload)
 	docs.GET("/", c.List)
 	docs.GET("/:id", c.GetByID)
 	docs.GET("/:id/file", c.StreamFile)
 	docs.PATCH("/:id", c.Update)
 	docs.DELETE("/:id", c.Delete)
+}
+
+func documentActor(ctx *gin.Context) (string, bool) {
+	claims := middleware.GetClaims(ctx.Request.Context())
+	if claims == nil {
+		return "", false
+	}
+	for _, role := range claims.Roles {
+		if strings.EqualFold(role, "admin") {
+			return claims.UserID, true
+		}
+	}
+	return claims.UserID, false
 }
 
 // getTenant extracts the tenant ID from context.
@@ -55,7 +77,8 @@ func (c *Controller) getTenant(ctx *gin.Context) string {
 func (c *Controller) Upload(ctx *gin.Context) {
 	tenantID := c.getTenant(ctx)
 
-	if err := ctx.Request.ParseMultipartForm(50 << 20); err != nil { // 50 MB max in-memory
+	ctx.Request.Body = http.MaxBytesReader(ctx.Writer, ctx.Request.Body, maxFileSize+(1<<20))
+	if err := ctx.Request.ParseMultipartForm(16 << 20); err != nil {
 		response.BadRequestGin(ctx, fmt.Errorf("parse multipart: %w", err))
 		return
 	}
@@ -71,11 +94,14 @@ func (c *Controller) Upload(ctx *gin.Context) {
 		response.BadRequestGin(ctx, fmt.Errorf("only PDF files are allowed"))
 		return
 	}
+	if header.Size > maxFileSize {
+		response.BadRequestGin(ctx, fmt.Errorf("file exceeds max size"))
+		return
+	}
 
-	// Collect form fields.
-	uploadedBy := ctx.Request.FormValue("uploaded_by")
+	uploadedBy, _ := documentActor(ctx)
 	if uploadedBy == "" {
-		response.BadRequestGin(ctx, fmt.Errorf("uploaded_by is required"))
+		response.BadRequestGin(ctx, fmt.Errorf("authenticated user is required"))
 		return
 	}
 
@@ -124,13 +150,14 @@ func (c *Controller) Upload(ctx *gin.Context) {
 // @Router /documents [get]
 func (c *Controller) List(ctx *gin.Context) {
 	tenantID := c.getTenant(ctx)
+	userID, isAdmin := documentActor(ctx)
 	cursor := ctx.Query("cursor")
 	limit, _ := strconv.Atoi(ctx.Query("limit"))
 	if limit == 0 {
 		limit = 20
 	}
 
-	result, err := c.svc.List(ctx.Request.Context(), tenantID, cursor, limit)
+	result, err := c.svc.ListForActor(ctx.Request.Context(), tenantID, userID, isAdmin, cursor, limit)
 	if err != nil {
 		c.log.Error().Err(err).Msg("documents.controller.list")
 		response.InternalErrorGin(ctx, err)
@@ -152,8 +179,9 @@ func (c *Controller) List(ctx *gin.Context) {
 func (c *Controller) GetByID(ctx *gin.Context) {
 	tenantID := c.getTenant(ctx)
 	id := ctx.Param("id")
+	userID, isAdmin := documentActor(ctx)
 
-	doc, err := c.svc.GetByID(ctx.Request.Context(), tenantID, id)
+	doc, err := c.svc.GetByIDForActor(ctx.Request.Context(), tenantID, id, userID, isAdmin)
 	if err != nil {
 		if IsNotFound(err) {
 			response.NotFoundGin(ctx, "document not found")
@@ -180,8 +208,9 @@ func (c *Controller) GetByID(ctx *gin.Context) {
 func (c *Controller) StreamFile(ctx *gin.Context) {
 	tenantID := c.getTenant(ctx)
 	id := ctx.Param("id")
+	userID, isAdmin := documentActor(ctx)
 
-	r2URL, stream, err := c.svc.StreamFile(ctx.Request.Context(), tenantID, id)
+	_, stream, err := c.svc.StreamFileForActor(ctx.Request.Context(), tenantID, id, userID, isAdmin)
 	if err != nil {
 		if IsNotFound(err) {
 			response.NotFoundGin(ctx, "document not found")
@@ -214,20 +243,7 @@ func (c *Controller) StreamFile(ctx *gin.Context) {
 		return
 	}
 
-	if r2URL != "" {
-		buf, _, err := c.svc.r2.GetFileBuffer(ctx.Request.Context(), r2URL)
-		if err != nil {
-			c.log.Error().Err(err).Str("id", id).Msg("documents.controller.stream: r2 read failed")
-			response.InternalErrorGin(ctx, err)
-			return
-		}
-
-		ctx.Header("Content-Length", strconv.Itoa(len(buf)))
-		ctx.Writer.WriteHeader(http.StatusOK)
-		if _, err := ctx.Writer.Write(buf); err != nil {
-			c.log.Warn().Err(err).Msg("documents.controller.stream: write failed")
-		}
-	}
+	response.InternalErrorGin(ctx, fmt.Errorf("document stream unavailable"))
 }
 
 // Update updates document metadata.
@@ -243,6 +259,7 @@ func (c *Controller) StreamFile(ctx *gin.Context) {
 func (c *Controller) Update(ctx *gin.Context) {
 	tenantID := c.getTenant(ctx)
 	id := ctx.Param("id")
+	userID, isAdmin := documentActor(ctx)
 
 	var req dto.UpdateDocumentRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
@@ -250,7 +267,7 @@ func (c *Controller) Update(ctx *gin.Context) {
 		return
 	}
 
-	doc, err := c.svc.Update(ctx.Request.Context(), tenantID, id, &req)
+	doc, err := c.svc.UpdateForActor(ctx.Request.Context(), tenantID, id, userID, isAdmin, &req)
 	if err != nil {
 		if IsNotFound(err) {
 			response.NotFoundGin(ctx, "document not found")
@@ -276,8 +293,9 @@ func (c *Controller) Update(ctx *gin.Context) {
 func (c *Controller) Delete(ctx *gin.Context) {
 	tenantID := c.getTenant(ctx)
 	id := ctx.Param("id")
+	userID, isAdmin := documentActor(ctx)
 
-	if err := c.svc.Delete(ctx.Request.Context(), tenantID, id); err != nil {
+	if err := c.svc.DeleteForActor(ctx.Request.Context(), tenantID, id, userID, isAdmin); err != nil {
 		if IsNotFound(err) {
 			response.NotFoundGin(ctx, "document not found")
 			return

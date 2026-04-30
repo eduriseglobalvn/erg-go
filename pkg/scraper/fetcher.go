@@ -4,16 +4,18 @@ package scraper
 
 import (
 	"context"
+	crypto_rand "crypto/rand"
 	"fmt"
 	"io"
-	"math/rand"
-	"net/http"
+	"math/big"
+	stdhttp "net/http"
 	"net/url"
 	"strings"
 	"sync"
 	"time"
 
 	"erg.ninja/pkg/config"
+	safehttp "erg.ninja/pkg/http"
 	"erg.ninja/pkg/logger"
 )
 
@@ -25,7 +27,7 @@ type RobotsParser interface {
 
 // Fetcher fetches web pages with anti-blocking and policy compliance.
 type Fetcher struct {
-	client       *http.Client
+	client       *stdhttp.Client
 	cfg          config.ScraperConfig
 	log          *logger.Logger
 	robotsParser RobotsParser
@@ -66,14 +68,15 @@ func NewFetcher(cfg config.ScraperConfig, opts ...FetcherOption) *Fetcher {
 		o(f)
 	}
 
-	transport := &http.Transport{
+	transport := &stdhttp.Transport{
+		DialContext:           safehttp.SafeDialContext(safehttp.SafeDialerConfig{}),
 		MaxIdleConns:          100,
 		IdleConnTimeout:       90 * time.Second,
 		TLSHandshakeTimeout:   10 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
 	}
 
-	f.client = &http.Client{
+	f.client = &stdhttp.Client{
 		Transport: transport,
 		Timeout:   cfg.Timeout,
 	}
@@ -128,7 +131,7 @@ func (f *Fetcher) Fetch(ctx context.Context, targetURL string) *FetchResult {
 	}
 
 	// Build request.
-	req, err := http.NewRequestWithContext(ctx, "GET", targetURL, nil)
+	req, err := stdhttp.NewRequestWithContext(ctx, "GET", targetURL, nil)
 	if err != nil {
 		return &FetchResult{URL: targetURL, Error: fmt.Errorf("scraper: new request: %w", err)}
 	}
@@ -194,7 +197,7 @@ func (f *Fetcher) Fetch(ctx context.Context, targetURL string) *FetchResult {
 
 // FetchWithEtag performs a conditional fetch using ETag/Last-Modified headers.
 func (f *Fetcher) FetchWithEtag(ctx context.Context, targetURL, etag, lastModified string) *FetchResult {
-	req, err := http.NewRequestWithContext(ctx, "GET", targetURL, nil)
+	req, err := stdhttp.NewRequestWithContext(ctx, "GET", targetURL, nil)
 	if err != nil {
 		return &FetchResult{URL: targetURL, Error: fmt.Errorf("scraper: new request: %w", err)}
 	}
@@ -213,7 +216,7 @@ func (f *Fetcher) FetchWithEtag(ctx context.Context, targetURL, etag, lastModifi
 	defer resp.Body.Close()
 
 	// 304 Not Modified — content hasn't changed.
-	if resp.StatusCode == http.StatusNotModified {
+	if resp.StatusCode == stdhttp.StatusNotModified {
 		return &FetchResult{URL: targetURL, StatusCode: resp.StatusCode}
 	}
 
@@ -232,7 +235,7 @@ func (f *Fetcher) FetchWithEtag(ctx context.Context, targetURL, etag, lastModifi
 }
 
 // isBlocked detects block patterns from response status codes and body content.
-func (f *Fetcher) isBlocked(resp *http.Response) bool {
+func (f *Fetcher) isBlocked(resp *stdhttp.Response) bool {
 	// Check status codes.
 	for _, code := range f.cfg.BlockStatusCodes {
 		if resp.StatusCode == code {
@@ -275,7 +278,18 @@ func (f *Fetcher) selectUserAgent() string {
 	if len(f.userAgents) == 0 {
 		return "Mozilla/5.0 (compatible; erg-crawler/1.0)"
 	}
-	return f.userAgents[rand.Intn(len(f.userAgents))]
+	return f.userAgents[randomIndex(len(f.userAgents))]
+}
+
+func randomIndex(length int) int {
+	if length <= 1 {
+		return 0
+	}
+	n, err := crypto_rand.Int(crypto_rand.Reader, big.NewInt(int64(length)))
+	if err != nil {
+		return int(time.Now().UnixNano() % int64(length))
+	}
+	return int(n.Int64())
 }
 
 // selectProxy rotates through configured proxy URLs in round-robin fashion.
@@ -299,7 +313,7 @@ func FetchRobotsTxt(ctx context.Context, baseURL string) ([]byte, error) {
 	}
 	robotsURL := fmt.Sprintf("%s://%s/robots.txt", u.Scheme, u.Host)
 
-	req, err := http.NewRequestWithContext(ctx, "GET", robotsURL, nil)
+	req, err := stdhttp.NewRequestWithContext(ctx, "GET", robotsURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("scraper: new robots.txt request: %w", err)
 	}
@@ -314,9 +328,10 @@ func FetchRobotsTxt(ctx context.Context, baseURL string) ([]byte, error) {
 		}
 	}
 
-	client := &http.Client{
+	client := &stdhttp.Client{
 		Timeout: deadline,
-		Transport: &http.Transport{
+		Transport: &stdhttp.Transport{
+			DialContext:         safehttp.SafeDialContext(safehttp.SafeDialerConfig{}),
 			MaxIdleConns:        5,
 			IdleConnTimeout:     30 * time.Second,
 			TLSHandshakeTimeout: 5 * time.Second,
@@ -329,7 +344,7 @@ func FetchRobotsTxt(ctx context.Context, baseURL string) ([]byte, error) {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode != stdhttp.StatusOK {
 		return nil, fmt.Errorf("scraper: robots.txt returned status %d", resp.StatusCode)
 	}
 

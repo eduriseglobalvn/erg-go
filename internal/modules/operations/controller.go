@@ -2,6 +2,7 @@ package operations
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -37,6 +38,10 @@ func (c *Controller) RegisterRoutes(r *gin.Engine, jwtVal *auth.JWTValidator) {
 	api.POST("/firewall/block", c.BlockIP)
 	api.POST("/firewall/unblock", c.UnblockIP)
 	api.GET("/firewall/check/:ip", c.CheckIP)
+	api.GET("/firewall/allowlist", c.ListAllowlistedIPs)
+	api.POST("/firewall/allowlist", c.AllowlistIP)
+	api.POST("/firewall/allowlist/remove", c.RemoveAllowlistIP)
+	api.DELETE("/firewall/allowlist/*entry", c.RemoveAllowlistIPByParam)
 
 	// Configs
 	api.GET("/configs", c.ListConfigs)
@@ -127,6 +132,8 @@ func (c *Controller) BlockIP(ctx *gin.Context) {
 		IP       string `json:"ip" binding:"required"`
 		Duration int    `json:"duration_seconds"` // optional
 		TTLMS    int    `json:"ttlMs"`
+		Reason   string `json:"reason"`
+		Source   string `json:"source"`
 	}
 	if err := ctx.ShouldBindJSON(&req); err != nil {
 		response.BadRequestGin(ctx, err)
@@ -137,7 +144,15 @@ func (c *Controller) BlockIP(ctx *gin.Context) {
 	if req.TTLMS > 0 {
 		duration = time.Duration(req.TTLMS) * time.Millisecond
 	}
-	if err := c.svc.BlockIP(ctx.Request.Context(), req.IP, duration); err != nil {
+	source := req.Source
+	if source == "" {
+		source = "operations"
+	}
+	reason := req.Reason
+	if reason == "" {
+		reason = "manual"
+	}
+	if err := c.svc.BlockIPWithMetadata(ctx.Request.Context(), req.IP, duration, reason, source); err != nil {
 		response.InternalErrorGin(ctx, err)
 		return
 	}
@@ -199,6 +214,83 @@ func (c *Controller) ListBlockedIPs(ctx *gin.Context) {
 		return
 	}
 	response.OKGin(ctx, list)
+}
+
+func (c *Controller) ListAllowlistedIPs(ctx *gin.Context) {
+	list, err := c.svc.ListAllowlistedIPs(ctx.Request.Context())
+	if err != nil {
+		response.InternalErrorGin(ctx, err)
+		return
+	}
+	response.OKGin(ctx, list)
+}
+
+func (c *Controller) AllowlistIP(ctx *gin.Context) {
+	var req struct {
+		Entry    string `json:"entry"`
+		IP       string `json:"ip"`
+		Duration int    `json:"duration_seconds"`
+		TTLMS    int    `json:"ttlMs"`
+		Reason   string `json:"reason"`
+	}
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		response.BadRequestGin(ctx, err)
+		return
+	}
+	entry := req.Entry
+	if entry == "" {
+		entry = req.IP
+	}
+	if entry == "" {
+		response.BadRequestGin(ctx, fmt.Errorf("entry or ip is required"))
+		return
+	}
+	duration := time.Duration(req.Duration) * time.Second
+	if req.TTLMS > 0 {
+		duration = time.Duration(req.TTLMS) * time.Millisecond
+	}
+	if err := c.svc.AllowlistIP(ctx.Request.Context(), entry, req.Reason, duration); err != nil {
+		response.BadRequestGin(ctx, err)
+		return
+	}
+	response.OKGin(ctx, map[string]any{"entry": entry, "status": "allowlisted"})
+}
+
+func (c *Controller) RemoveAllowlistIP(ctx *gin.Context) {
+	var req struct {
+		Entry string `json:"entry"`
+		IP    string `json:"ip"`
+	}
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		response.BadRequestGin(ctx, err)
+		return
+	}
+	entry := req.Entry
+	if entry == "" {
+		entry = req.IP
+	}
+	if entry == "" {
+		response.BadRequestGin(ctx, fmt.Errorf("entry or ip is required"))
+		return
+	}
+	if err := c.svc.RemoveAllowlistIP(ctx.Request.Context(), entry); err != nil {
+		response.InternalErrorGin(ctx, err)
+		return
+	}
+	response.OKGin(ctx, map[string]any{"entry": entry, "status": "removed"})
+}
+
+func (c *Controller) RemoveAllowlistIPByParam(ctx *gin.Context) {
+	entry := strings.TrimPrefix(ctx.Param("entry"), "/")
+	if entry == "" {
+		response.BadRequestGin(ctx, fmt.Errorf("entry is required"))
+		return
+	}
+	if err := c.svc.RemoveAllowlistIP(ctx.Request.Context(), entry); err != nil {
+		response.InternalErrorGin(ctx, err)
+		return
+	}
+	response.OKGin(ctx, map[string]any{"entry": entry, "status": "removed"})
 }
 
 // ListConfigs handles GET /api/operations/configs.
@@ -292,7 +384,12 @@ func (c *Controller) CheckIP(ctx *gin.Context) {
 		response.InternalErrorGin(ctx, err)
 		return
 	}
-	response.OKGin(ctx, map[string]any{"ip": ip, "blocked": blocked, "isBlocked": blocked})
+	allowlisted, err := c.svc.IsIPAllowlisted(ctx.Request.Context(), ip)
+	if err != nil {
+		response.InternalErrorGin(ctx, err)
+		return
+	}
+	response.OKGin(ctx, map[string]any{"ip": ip, "blocked": blocked, "isBlocked": blocked, "allowlisted": allowlisted})
 }
 
 // DeleteConfig handles DELETE /api/operations/configs/:key.

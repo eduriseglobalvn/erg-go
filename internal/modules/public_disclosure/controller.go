@@ -7,28 +7,34 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"erg.ninja/internal/dto/response"
+	"erg.ninja/internal/middleware"
 	docDto "erg.ninja/internal/modules/documents/dto"
 	"erg.ninja/internal/modules/public_disclosure/entities"
 	"erg.ninja/internal/modules/public_disclosure/service"
+	"erg.ninja/pkg/auth"
 	"erg.ninja/pkg/logger"
 	"erg.ninja/pkg/tenant"
 )
 
 type Controller struct {
-	svc *service.Service
-	log *logger.Logger
+	svc          *service.Service
+	log          *logger.Logger
+	jwtValidator *auth.JWTValidator
 }
 
-func NewController(svc *service.Service, log *logger.Logger) *Controller {
-	return &Controller{svc: svc, log: log}
+func NewController(svc *service.Service, log *logger.Logger, jwtValidator *auth.JWTValidator) *Controller {
+	return &Controller{svc: svc, log: log, jwtValidator: jwtValidator}
 }
 
 func (c *Controller) RegisterRoutes(r *gin.Engine) {
 	group := r.Group("/public-disclosure")
 	group.GET("/", c.List)
-	group.POST("/", c.Create)
 	group.GET("/:id", c.GetByID)
-	group.DELETE("/:id", c.Delete)
+
+	admin := group.Group("")
+	admin.Use(middleware.JWTMiddleware(c.jwtValidator), middleware.RequireRoles("admin"))
+	admin.POST("/", c.Create)
+	admin.DELETE("/:id", c.Delete)
 }
 
 func (c *Controller) List(ctx *gin.Context) {

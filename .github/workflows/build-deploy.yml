@@ -1,4 +1,4 @@
-name: Build & Deploy
+name: Build and Deploy
 
 on:
   push:
@@ -6,38 +6,35 @@ on:
       - main
   workflow_dispatch:
     inputs:
-      service:
-        description: 'Service to deploy (all, bot, notification, crawler, trending)'
-        required: false
-        default: all
+      environment:
+        description: Deployment environment
+        required: true
+        default: staging
+        type: choice
+        options:
+          - staging
+          - production
 
 env:
-  GO_VERSION: "1.22"
-  REGISTRY: ghcr.io/${{ github.repository_owner }}
-  DOCKER_BUILDX: "true"
+  GO_VERSION: "1.25"
+  IMAGE_NAME: ghcr.io/${{ github.repository }}/erg-server
+
+permissions:
+  contents: read
+  packages: write
 
 jobs:
-  # ── Build Docker images ─────────────────────────────────────────────────────
-  build-images:
-    name: Build & Push Docker Images
+  build-image:
+    name: Build container image
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-    permissions:
-      contents: read
-      packages: write
-
+    timeout-minutes: 25
     outputs:
-      bot_tag: ${{ steps.meta.outputs.bot_tag }}
-      notification_tag: ${{ steps.meta.outputs.notification_tag }}
-      crawler_tag: ${{ steps.meta.outputs.crawler_tag }}
-      trending_tag: ${{ steps.meta.outputs.trending_tag }}
+      image: ${{ steps.meta.outputs.image }}
+      tag: ${{ steps.meta.outputs.tag }}
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
-      - name: Set up QEMU (for multi-arch)
-        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -49,171 +46,68 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Docker metadata
+      - name: Image metadata
         id: meta
-        uses: docker/metadata-action@v5
+        run: |
+          SHORT_SHA="${GITHUB_SHA::7}"
+          echo "image=${IMAGE_NAME}" >> "$GITHUB_OUTPUT"
+          echo "tag=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push erg-server
+        uses: docker/build-push-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ github.event.repository.name }}
+          context: .
+          file: Dockerfile.base
+          target: runtime
+          push: true
           tags: |
-            type=sha,prefix=,suffix=,format=short
-            type=ref,event=branch
-            type=semver,pattern={{version}}
-            type=sha,prefix=,format=short,event=tag
-
-      - name: Extract metadata for each service
-        id: service_tags
-        run: |
-          SHA=${{ github.sha }}
-          SHORT_SHA=${SHA:0:7}
-          echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
-          echo "bot_tag=${{ env.REGISTRY }}/bot-service:${SHORT_SHA}" >> $GITHUB_OUTPUT
-          echo "notification_tag=${{ env.REGISTRY }}/notification-service:${SHORT_SHA}" >> $GITHUB_OUTPUT
-          echo "crawler_tag=${{ env.REGISTRY }}/crawler-service:${SHORT_SHA}" >> $GITHUB_OUTPUT
-          echo "trending_tag=${{ env.REGISTRY }}/trending-service:${SHORT_SHA}" >> $GITHUB_OUTPUT
-
-      - name: Build bot-service
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: Dockerfile.base
-          target: builder
-          build-args: |
-            GO_VERSION=${{ env.GO_VERSION }}
-            TARGET_SERVICE=bot-service
-          tags: ${{ steps.service_tags.outputs.bot_tag }}
-          push: ${{ github.event_name != 'pull_request' }}
+            ${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.tag }}
+            ${{ env.IMAGE_NAME }}:main
           platforms: linux/amd64,linux/arm64
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Build notification-service
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: Dockerfile.base
-          target: builder
-          build-args: |
-            GO_VERSION=${{ env.GO_VERSION }}
-            TARGET_SERVICE=notification-service
-          tags: ${{ steps.service_tags.outputs.notification_tag }}
-          push: ${{ github.event_name != 'pull_request' }}
-          platforms: linux/amd64,linux/arm64
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Build crawler-service
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: Dockerfile.base
-          target: builder
-          build-args: |
-            GO_VERSION=${{ env.GO_VERSION }}
-            TARGET_SERVICE=crawler-service
-          tags: ${{ steps.service_tags.outputs.crawler_tag }}
-          push: ${{ github.event_name != 'pull_request' }}
-          platforms: linux/amd64,linux/arm64
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Build trending-service
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: Dockerfile.base
-          target: builder
-          build-args: |
-            GO_VERSION=${{ env.GO_VERSION }}
-            TARGET_SERVICE=trending-service
-          tags: ${{ steps.service_tags.outputs.trending_tag }}
-          push: ${{ github.event_name != 'pull_request' }}
-          platforms: linux/amd64,linux/arm64
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Update Docker Compose manifest
-        if: github.event_name != 'pull_request'
-        run: |
-          SHA=${{ github.sha }}
-          SHORT_SHA=${SHA:0:7}
-          # Update image tags in docker-compose.yml
-          sed -i "s|image: .*bot-service:|image: ${{ env.REGISTRY }}/bot-service:${SHORT_SHA}|" docker-compose.yml
-          sed -i "s|image: .*notification-service:|image: ${{ env.REGISTRY }}/notification-service:${SHORT_SHA}|" docker-compose.yml
-          sed -i "s|image: .*crawler-service:|image: ${{ env.REGISTRY }}/crawler-service:${SHORT_SHA}|" docker-compose.yml
-          sed -i "s|image: .*trending-service:|image: ${{ env.REGISTRY }}/trending-service:${SHORT_SHA}|" docker-compose.yml
-          echo "Docker Compose images updated to ${SHORT_SHA}"
-
-  # ── Deploy to staging ──────────────────────────────────────────────────────
-  deploy-staging:
-    name: Deploy to Staging
+  deploy:
+    name: Deploy
     runs-on: ubuntu-latest
-    needs: build-images
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    environment: staging
     timeout-minutes: 15
+    needs: build-image
+    environment: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'staging' }}
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Configure kubectl for staging
-        uses: azure/k8s-set-context@v3
-        with:
-          kubeconfig: ${{ secrets.KUBECONFIG_STAGING }}
-
-      - name: Deploy to staging cluster
-        run: |
-          SHA=${{ github.sha }}
-          SHORT_SHA=${SHA:0:7}
-
-          # Build image names
-          BOT_IMG="${{ env.REGISTRY }}/bot-service:${SHORT_SHA}"
-          NOTIF_IMG="${{ env.REGISTRY }}/notification-service:${SHORT_SHA}"
-          CRAWLER_IMG="${{ env.REGISTRY }}/crawler-service:${SHORT_SHA}"
-          TRENDING_IMG="${{ env.REGISTRY }}/trending-service:${SHORT_SHA}"
-
-          # Deploy each service using kubectl rollout
-          for SERVICE in bot notification crawler trending; do
-            IMG_VAR="${SERVICE}_IMG"
-            kubectl set image deployment/erg-${SERVICE}-service \
-              ${SERVICE}-service="${!IMG_VAR}" \
-              --namespace=erg-staging
-            echo "Updated erg-${SERVICE}-service image to ${!IMG_VAR}"
-          done
-
-      - name: Wait for rollout
-        run: |
-          for SERVICE in bot notification crawler trending; do
-            echo "Waiting for erg-${SERVICE}-service rollout..."
-            kubectl rollout status deployment/erg-${SERVICE}-service \
-              --namespace=erg-staging \
-              --timeout=5m
-          done
-
-      - name: Health check after deployment
-        run: |
-          sleep 10
-          for PORT in 8081 8082 8083 8084; do
-            echo "Checking localhost:${PORT}/healthz..."
-            curl -sf "http://localhost:${PORT}/healthz" \
-              || echo "Warning: health check failed for port ${PORT}"
-          done
-
-      - name: Notify on failure
-        if: failure()
-        uses: slackapi/slack-github-action@v1.25
-        with:
-          payload: |
-            {
-              "text": "⚠️ Deployment to staging failed for ${{ github.sha }}",
-              "blocks": [{
-                "type": "section",
-                "text": {
-                  "type": "mrkdwn",
-                  "text": "*Deployment Failed*\nRepo: ${{ github.repository }}\nCommit: `${{ github.sha }}`\n<https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}|View run>"
-                }
-              }]
-            }
+      - name: Configure kubectl
         env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+          KUBECONFIG_VALUE: ${{ secrets.KUBECONFIG }}
+        run: |
+          if [ -z "${KUBECONFIG_VALUE}" ]; then
+            echo "KUBECONFIG is not configured; skipping kubectl setup."
+            exit 0
+          fi
+          mkdir -p "${HOME}/.kube"
+          printf '%s' "${KUBECONFIG_VALUE}" > "${HOME}/.kube/config"
+
+      - name: Deploy erg-server
+        env:
+          KUBECONFIG_VALUE: ${{ secrets.KUBECONFIG }}
+        run: |
+          if [ -z "${KUBECONFIG_VALUE}" ]; then
+            echo "KUBECONFIG is not configured; image was built but deploy is skipped."
+            exit 0
+          fi
+          kubectl set image deployment/erg-server \
+            erg-server=${{ needs.build-image.outputs.image }}:${{ needs.build-image.outputs.tag }} \
+            --namespace=erg
+          kubectl rollout status deployment/erg-server --namespace=erg --timeout=5m
+
+      - name: Health check
+        env:
+          READY_URL: ${{ secrets.ERG_READY_URL }}
+        run: |
+          if [ -z "${READY_URL}" ]; then
+            echo "ERG_READY_URL is not configured; skipping remote readiness check."
+            exit 0
+          fi
+          curl --fail --show-error --silent "${READY_URL}"

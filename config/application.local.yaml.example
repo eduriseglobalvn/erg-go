@@ -1,0 +1,23 @@
+# Local-only override example.
+# Copy to config/application.local.yaml and fill values on your machine.
+# The real application.local.yaml file is gitignored.
+
+database:
+  password: replace-with-local-postgres-password
+
+auth:
+  jwt_secret: replace-with-local-jwt-secret-min-32-chars
+  google_bridge_secret: replace-with-local-google-bridge-secret
+
+smtp:
+  host: smtp.example.com
+  username: noreply@example.com
+  password: replace-with-local-smtp-password
+  from: "No Reply <noreply@example.com>"
+
+r2:
+  endpoint: https://example.r2.cloudflarestorage.com
+  access_key_id: replace-with-local-r2-access-key-id
+  secret_key: replace-with-local-r2-secret-key
+  bucket_name: erg-dev
+  public_domain: https://media.example.com

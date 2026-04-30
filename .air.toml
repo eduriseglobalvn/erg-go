@@ -1,6 +1,6 @@
 [build]
-  bin = "./tmp/erg-server"
-  cmd = "make swag && go build -o ./tmp/erg-server ./cmd/server"
+  bin = "./tmp/erg-server.exe"
+  cmd = "make swag; if ($LASTEXITCODE -eq 0) { go build -o ./tmp/erg-server.exe ./cmd/server }"
   delay = 1000
   exclude_dir = ["tmp", "vendor", ".git", "migrations", "docs"]
 [misc]

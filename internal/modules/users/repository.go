@@ -346,8 +346,34 @@ func (r *Repository) FindActiveSessions(ctx context.Context, userID bson.ObjectI
 	return sessions, nil
 }
 
+// FindSessionByID returns a session by sessionID and tenant.
+func (r *Repository) FindSessionByID(ctx context.Context, sessionID string, tenantID string) (*entities.UserSession, error) {
+	if err := r.ensureDB(); err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	var record postgrescore.AuthSession
+	err := r.db.WithContext(ctx).
+		Where("session_id = ? AND tenant_id = ?", sessionID, tenantID).
+		First(&record).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrSessionNotFound
+		}
+		return nil, fmt.Errorf("users.repository.findSessionByID: %w", err)
+	}
+	return mapAuthSession(&record)
+}
+
 // RevokeSession marks a session as revoked.
 func (r *Repository) RevokeSession(ctx context.Context, sessionID string, tenantID string) error {
+	return r.RevokeSessionWithReason(ctx, sessionID, tenantID, "logout")
+}
+
+// RevokeSessionWithReason marks a session as revoked and stores why it was revoked.
+func (r *Repository) RevokeSessionWithReason(ctx context.Context, sessionID string, tenantID string, reason string) error {
 	if err := r.ensureDB(); err != nil {
 		return err
 	}
@@ -359,8 +385,9 @@ func (r *Repository) RevokeSession(ctx context.Context, sessionID string, tenant
 		Model(&postgrescore.AuthSession{}).
 		Where("session_id = ? AND tenant_id = ?", sessionID, tenantID).
 		Updates(map[string]any{
-			"revoked_at": &now,
-			"updated_at": now,
+			"revoked_at":     &now,
+			"revoked_reason": strings.TrimSpace(reason),
+			"updated_at":     now,
 		})
 	if result.Error != nil {
 		return fmt.Errorf("users.repository.revokeSession: %w", result.Error)
@@ -371,8 +398,39 @@ func (r *Repository) RevokeSession(ctx context.Context, sessionID string, tenant
 	return nil
 }
 
+// RevokeUserSessionWithReason revokes a session only if it belongs to the user.
+func (r *Repository) RevokeUserSessionWithReason(ctx context.Context, userID bson.ObjectID, sessionID string, tenantID string, reason string) error {
+	if err := r.ensureDB(); err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	now := time.Now().UTC()
+	result := r.db.WithContext(ctx).
+		Model(&postgrescore.AuthSession{}).
+		Where("user_id = ? AND session_id = ? AND tenant_id = ?", userID.Hex(), sessionID, tenantID).
+		Updates(map[string]any{
+			"revoked_at":     &now,
+			"revoked_reason": strings.TrimSpace(reason),
+			"updated_at":     now,
+		})
+	if result.Error != nil {
+		return fmt.Errorf("users.repository.revokeUserSession: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return ErrSessionNotFound
+	}
+	return nil
+}
+
 // RevokeAllUserSessions revokes every active session for a user.
 func (r *Repository) RevokeAllUserSessions(ctx context.Context, userID bson.ObjectID, tenantID string) error {
+	return r.RevokeAllUserSessionsWithReason(ctx, userID, tenantID, "logout")
+}
+
+// RevokeAllUserSessionsWithReason revokes every active session for a user and stores why.
+func (r *Repository) RevokeAllUserSessionsWithReason(ctx context.Context, userID bson.ObjectID, tenantID string, reason string) error {
 	if err := r.ensureDB(); err != nil {
 		return err
 	}
@@ -384,8 +442,9 @@ func (r *Repository) RevokeAllUserSessions(ctx context.Context, userID bson.Obje
 		Model(&postgrescore.AuthSession{}).
 		Where("user_id = ? AND tenant_id = ? AND revoked_at IS NULL", userID.Hex(), tenantID).
 		Updates(map[string]any{
-			"revoked_at": &now,
-			"updated_at": now,
+			"revoked_at":     &now,
+			"revoked_reason": strings.TrimSpace(reason),
+			"updated_at":     now,
 		}).Error; err != nil {
 		return fmt.Errorf("users.repository.revokeAllUserSessions: %w", err)
 	}
@@ -476,16 +535,20 @@ func mapAuthSession(record *postgrescore.AuthSession) (*entities.UserSession, er
 		return nil, err
 	}
 	return &entities.UserSession{
-		ID:           id,
-		UserID:       userID,
-		SessionID:    record.SessionID,
-		IPAddress:    record.IPAddress,
-		UserAgent:    record.UserAgent,
-		RefreshToken: record.RefreshTokenHash,
-		TenantID:     record.TenantID,
-		ExpiresAt:    record.ExpiresAt,
-		RevokedAt:    record.RevokedAt,
-		CreatedAt:    record.CreatedAt,
+		ID:            id,
+		UserID:        userID,
+		SessionID:     record.SessionID,
+		DeviceID:      record.DeviceID,
+		DeviceName:    record.DeviceName,
+		IPAddress:     record.IPAddress,
+		UserAgent:     record.UserAgent,
+		RefreshToken:  record.RefreshTokenHash,
+		TenantID:      record.TenantID,
+		ExpiresAt:     record.ExpiresAt,
+		RevokedAt:     record.RevokedAt,
+		RevokedReason: record.RevokedReason,
+		LastActiveAt:  record.LastActiveAt,
+		CreatedAt:     record.CreatedAt,
 	}, nil
 }
 

@@ -7,9 +7,6 @@ import (
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
-	"golang.org/x/oauth2"
-	"golang.org/x/oauth2/google"
-	"google.golang.org/api/searchconsole/v1"
 
 	"erg.ninja/internal/modules/ai_content"
 	"erg.ninja/pkg/database"
@@ -261,16 +258,7 @@ func (s *Service) SyncGSC(ctx context.Context, days int) (map[string]any, error)
 }
 
 func (s *Service) GetGSCAuthURL(ctx context.Context) (string, error) {
-	// Uses Google endpoint
-	conf := &oauth2.Config{
-		ClientID:     "mock-client-id",
-		ClientSecret: "mock-client-secret",
-		RedirectURL:  "http://localhost:8080/api/seo/gsc/auth/callback",
-		Scopes:       []string{searchconsole.WebmastersReadonlyScope},
-		Endpoint:     google.Endpoint,
-	}
-	url := conf.AuthCodeURL("state-token", oauth2.AccessTypeOffline)
-	return url, nil
+	return "", fmt.Errorf("seo: GSC OAuth client is not configured")
 }
 
 func (s *Service) ExchangeGSCToken(ctx context.Context, code string) (map[string]any, error) {
@@ -366,7 +354,7 @@ func (s *Service) SuggestMeta(ctx context.Context, title string, content string,
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Mock parsing JSON from AI
 	return map[string]string{
 		"description": result,

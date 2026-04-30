@@ -6,8 +6,16 @@ GOLINT      := golangci-lint run ./...
 GOBUILD     := go build -ldflags="-s -w"
 GOFMT       := gofmt -s -w
 BIN_DIR     := bin
-SERVICES    := bot-service notification-service crawler-service trending-service
+SERVICES    := erg-server plugin-server db-migrate
 GO_PACKAGES := $(shell go list ./...)
+K6          ?= k6
+LOAD_BASE_URL ?= http://localhost:8080
+LOAD_RAMP_VUS ?= 10
+LOAD_STEADY_VUS ?= 10
+LOAD_RAMP_DURATION ?= 2m
+LOAD_STEADY_DURATION ?= 5m
+LOAD_RAMP_DOWN_DURATION ?= 1m
+LOAD_QUESTIONS_PER_ATTEMPT ?= 5
 
 # Default Go environment.
 export CGO_ENABLED ?= 0
@@ -16,7 +24,7 @@ export GOARCH      ?= $(shell go env GOHOSTARCH)
 
 .PHONY: all build test lint lint-fix clean docker-build docker-up docker-down \
         deploy migrate generate proto-install tidy fmt vet staticcheck \
-        coverage ci help \
+        coverage ci help load-smoke load-100k migrate/mongo-indexes \
         plugin-build plugin-build/crawler-notif plugin-build/bot-notif \
         plugin-build/all plugin-list-tags
 
@@ -28,10 +36,14 @@ help: ## Show this help message.
 # ── Core targets ──────────────────────────────────────────────────────────────
 all: build ## Build all services (default).
 
-build: ## Build the single erg-server binary into bin/.
+build: ## Build production binaries into bin/.
 	@mkdir -p $(BIN_DIR)
 	go build -ldflags="-s -w" -o $(BIN_DIR)/erg-server ./cmd/server
+	go build -ldflags="-s -w" -o $(BIN_DIR)/plugin-server ./cmd/plugin-server
+	go build -ldflags="-s -w" -o $(BIN_DIR)/db-migrate ./cmd/db-migrate
 	@echo "Built: $(BIN_DIR)/erg-server"
+	@echo "Built: $(BIN_DIR)/plugin-server"
+	@echo "Built: $(BIN_DIR)/db-migrate"
 
 build/%: ## Build a specific service, e.g. make build/bot-service.
 	$(GOBUILD) -o $(BIN_DIR)/$* ./cmd/$*
@@ -143,10 +155,16 @@ docker-clean: ## Remove all containers, volumes, and images.
 	docker compose down -v --remove-orphans
 
 # ── Database migrations ────────────────────────────────────────────────────────
-migrate: ## Run database migrations for all services.
-	go run scripts/run_migrations.go
+migrate: ## Run PostgreSQL schema migrations.
+	go run ./cmd/db-migrate
 
-migrate/%: ## Run migrations for a specific service.
+migrate/backfill: ## Run PostgreSQL schema migrations and legacy MongoDB backfills.
+	go run ./cmd/db-migrate -backfill
+
+migrate/mongo-indexes: ## Create MongoDB indexes required by high-traffic LMS flows.
+	go run ./cmd/db-migrate -mongo-indexes
+
+migrate/mongo/%: ## Run legacy MongoDB index migrations for a specific module.
 	go run scripts/run_migrations.go --service=$*
 
 # ── Development helpers ─────────────────────────────────────────────────────────
@@ -158,6 +176,40 @@ dev: ## Run all services with hot reload (requires air or fresh).
 
 watch: ## Run tests on file changes (requires gotest).
 	gotestsum -- -race -count=1 ./...
+
+load-smoke: ## Run a small LMS k6 smoke test against LOAD_BASE_URL.
+	$(K6) run load/k6/lms_exam_flow.js \
+		-e BASE_URL=$(LOAD_BASE_URL) \
+		-e AUTH_TOKEN="$(AUTH_TOKEN)" \
+		-e TEACHER_TOKEN="$(TEACHER_TOKEN)" \
+		-e TENANT_ID="$(TENANT_ID)" \
+		-e ASSIGNMENT_ID="$(ASSIGNMENT_ID)" \
+		-e QUIZ_ID="$(QUIZ_ID)" \
+		-e CLASS_ID="$(CLASS_ID)" \
+		-e RAMP_VUS=$(LOAD_RAMP_VUS) \
+		-e STEADY_VUS=$(LOAD_STEADY_VUS) \
+		-e RAMP_DURATION=$(LOAD_RAMP_DURATION) \
+		-e STEADY_DURATION=$(LOAD_STEADY_DURATION) \
+		-e RAMP_DOWN_DURATION=$(LOAD_RAMP_DOWN_DURATION) \
+		-e QUESTIONS_PER_ATTEMPT=$(LOAD_QUESTIONS_PER_ATTEMPT)
+
+load-100k: ## Run the LMS k6 scenario with this generator's share of the 100k target.
+	$(K6) run load/k6/lms_exam_flow.js \
+		-e BASE_URL=$(LOAD_BASE_URL) \
+		-e AUTH_TOKEN="$(AUTH_TOKEN)" \
+		-e TEACHER_TOKEN="$(TEACHER_TOKEN)" \
+		-e TENANT_ID="$(TENANT_ID)" \
+		-e ASSIGNMENT_ID="$(ASSIGNMENT_ID)" \
+		-e QUIZ_ID="$(QUIZ_ID)" \
+		-e CLASS_ID="$(CLASS_ID)" \
+		-e RAMP_VUS=$(LOAD_RAMP_VUS) \
+		-e STEADY_VUS=$(LOAD_STEADY_VUS) \
+		-e RAMP_DURATION=$(LOAD_RAMP_DURATION) \
+		-e STEADY_DURATION=$(LOAD_STEADY_DURATION) \
+		-e RAMP_DOWN_DURATION=$(LOAD_RAMP_DOWN_DURATION) \
+		-e QUESTIONS_PER_ATTEMPT=$(LOAD_QUESTIONS_PER_ATTEMPT) \
+		-e LOGIN_EACH_ITERATION="$(LOGIN_EACH_ITERATION)" \
+		-e CREDENTIALS_FILE="$(CREDENTIALS_FILE)"
 
 # ── Deployment ────────────────────────────────────────────────────────────────
 deploy: ## Deploy all services to staging (requires kubectl context).

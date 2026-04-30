@@ -2,15 +2,14 @@
 package controller
 
 import (
-	"context"
 	"fmt"
 	"io"
-	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
 
 	"erg.ninja/internal/dto/response"
+	"erg.ninja/internal/middleware"
 	"erg.ninja/internal/modules/posts/dto"
 	"erg.ninja/internal/modules/posts/entities"
 	"erg.ninja/internal/modules/posts/service"
@@ -42,7 +41,7 @@ func (c *Controller) RegisterRoutes(r *gin.Engine) {
 
 	// ── Authenticated routes ─────────────────────────────────────────────
 	protected := api.Group("")
-	protected.Use(c.authMiddleware())
+	protected.Use(middleware.JWTMiddleware(c.JWTValidator), middleware.RequireRoles("admin", "moderator", "editor"))
 	protected.POST("/", c.CreatePost)
 	protected.PUT("/:id", c.UpdatePost)
 	protected.DELETE("/:id", c.SoftDeletePost)
@@ -61,50 +60,13 @@ func (c *Controller) RegisterRoutes(r *gin.Engine) {
 	api.GET("/categories/:id", c.GetCategory)
 
 	admin := api.Group("/categories")
-	admin.Use(c.authMiddleware())
+	admin.Use(middleware.JWTMiddleware(c.JWTValidator), middleware.RequireRoles("admin", "moderator", "editor"))
 	admin.POST("", c.CreateCategory)
 	admin.PUT("/:id", c.UpdateCategory)
 	admin.DELETE("/:id", c.DeleteCategory)
 }
 
 // ─── Auth Middleware ─────────────────────────────────────────────────────────
-
-func (c *Controller) authMiddleware() gin.HandlerFunc {
-	return func(ctx *gin.Context) {
-		if c.JWTValidator == nil {
-			response.UnauthorizedGin(ctx)
-			ctx.Abort()
-			return
-		}
-		claims, err := c.JWTValidator.Validate(ctx.GetHeader("Authorization"))
-		if err != nil {
-			response.UnauthorizedGin(ctx)
-			ctx.Abort()
-			return
-		}
-		userID := claims.UserID
-		newCtx := context.WithValue(ctx.Request.Context(), _uidKey, userID)
-		ctx.Request = ctx.Request.WithContext(newCtx)
-		ctx.Next()
-	}
-}
-
-// contextKey is a custom type for context keys to avoid collisions.
-type contextKey string
-
-const userIDKey contextKey = "user_id"
-
-// userIDCtxKey is the context key for user ID.
-type userIDCtxKey int
-
-const _uidKey userIDCtxKey = iota
-
-func (c *Controller) getUserID(r *http.Request) string {
-	if v := r.Context().Value(_uidKey); v != nil {
-		return v.(string)
-	}
-	return ""
-}
 
 // ─── Post Handlers ──────────────────────────────────────────────────────────
 
@@ -235,14 +197,7 @@ func (c *Controller) CreatePost(ctx *gin.Context) {
 		return
 	}
 
-	// Get user ID from context (populated via auth middleware)
-	var req2 http.Request
-	req2 = *ctx.Request.WithContext(context.WithValue(ctx.Request.Context(), _uidKey, ""))
-	_ = req2
-	userID := ""
-	if v := ctx.Request.Context().Value(_uidKey); v != nil {
-		userID = v.(string)
-	}
+	userID := middleware.GetUserID(ctx.Request.Context())
 
 	post, err := c.svc.CreatePost(ctx.Request.Context(), req, userID)
 	if err != nil {
@@ -278,10 +233,7 @@ func (c *Controller) UpdatePost(ctx *gin.Context) {
 		return
 	}
 
-	userID := ""
-	if v := ctx.Request.Context().Value(_uidKey); v != nil {
-		userID = v.(string)
-	}
+	userID := middleware.GetUserID(ctx.Request.Context())
 
 	post, err := c.svc.UpdatePost(ctx.Request.Context(), id, req, userID)
 	if err != nil {
@@ -400,10 +352,7 @@ func (c *Controller) PromotePost(ctx *gin.Context) {
 		return
 	}
 
-	userID := ""
-	if v := ctx.Request.Context().Value(_uidKey); v != nil {
-		userID = v.(string)
-	}
+	userID := middleware.GetUserID(ctx.Request.Context())
 
 	post, err := c.svc.PromotePost(ctx.Request.Context(), id, req.CategoryID, userID)
 	if err != nil {

@@ -4,10 +4,11 @@ package http
 import (
 	"bytes"
 	"context"
+	crypto_rand "crypto/rand"
 	"crypto/tls"
 	"fmt"
 	"io"
-	"math/rand"
+	"math/big"
 	"net"
 	"net/http"
 	"sync"
@@ -152,7 +153,7 @@ func (c *Client) Do(ctx context.Context, method, url string, body []byte, header
 	for attempt := 0; attempt <= c.maxRetries; attempt++ {
 		if attempt > 0 {
 			delay := c.retryDelays[min(attempt-1, len(c.retryDelays)-1)]
-			jitter := time.Duration(rand.Int63n(int64(delay)/2+1)) * time.Millisecond * 100
+			jitter := randomDuration(delay / 2)
 			wait := delay + jitter
 
 			c.log.DebugContext(ctx).
@@ -279,4 +280,15 @@ func (c *Client) CircuitState() string {
 		return "open"
 	}
 	return "unknown"
+}
+
+func randomDuration(max time.Duration) time.Duration {
+	if max <= 0 {
+		return 0
+	}
+	n, err := crypto_rand.Int(crypto_rand.Reader, big.NewInt(int64(max)))
+	if err != nil {
+		return time.Duration(time.Now().UnixNano() % int64(max))
+	}
+	return time.Duration(n.Int64())
 }

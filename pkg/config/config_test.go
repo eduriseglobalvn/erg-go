@@ -74,6 +74,119 @@ redis:
 	}
 }
 
+func TestLoader_LoadsApplicationProfileAndLocalLayers(t *testing.T) {
+	tmpDir := t.TempDir()
+	writeConfigFile(t, tmpDir+"/application.yaml", `
+app:
+  name: erg-base
+  env: development
+  port: 8080
+logging:
+  level: info
+redis:
+  host: base-redis.example.com
+`)
+	writeConfigFile(t, tmpDir+"/application.development.yaml", `
+app:
+  port: 9090
+redis:
+  host: dev-redis.example.com
+`)
+	writeConfigFile(t, tmpDir+"/application.local.yaml", `
+logging:
+  level: trace
+`)
+
+	cfg := new(Config)
+	l := NewLoader(WithConfigPaths(tmpDir), WithFileName("application"))
+	if err := l.Load(cfg); err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	if cfg.App.Name != "erg-base" {
+		t.Errorf("expected base app name, got %q", cfg.App.Name)
+	}
+	if cfg.App.Port != 9090 {
+		t.Errorf("expected development profile port 9090, got %d", cfg.App.Port)
+	}
+	if cfg.Redis.Host != "dev-redis.example.com" {
+		t.Errorf("expected development redis host, got %q", cfg.Redis.Host)
+	}
+	if cfg.Logging.Level != "trace" {
+		t.Errorf("expected local logging override, got %q", cfg.Logging.Level)
+	}
+}
+
+func TestLoader_ProcessProfileOverridesBaseEnv(t *testing.T) {
+	tmpDir := t.TempDir()
+	writeConfigFile(t, tmpDir+"/application.yaml", `
+app:
+  env: development
+  port: 8080
+http:
+  cors:
+    allowed_origins: ["http://localhost:3000"]
+`)
+	writeConfigFile(t, tmpDir+"/application.production.yaml", `
+app:
+  env: production
+  port: 8081
+http:
+  cors:
+    allowed_origins: ["https://erg.edu.vn"]
+auth:
+  jwt_secret: "0123456789abcdefghijklmnopqrstuvwxyz"
+  jwt_refresh_secret: "refresh-0123456789abcdefghijklmnopqrstuvwxyz"
+database:
+  password: "prod-db-password"
+`)
+	t.Setenv("APP_PROFILE", "production")
+
+	cfg := new(Config)
+	l := NewLoader(WithConfigPaths(tmpDir), WithFileName("application"))
+	if err := l.Load(cfg); err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	if cfg.App.Env != "production" {
+		t.Errorf("expected production env, got %q", cfg.App.Env)
+	}
+	if cfg.App.Port != 8081 {
+		t.Errorf("expected production port 8081, got %d", cfg.App.Port)
+	}
+	if got := cfg.HTTP.CORS.AllowedOrigins; len(got) != 1 || got[0] != "https://erg.edu.vn" {
+		t.Errorf("expected production cors origin, got %#v", got)
+	}
+}
+
+func TestLoader_LegacyConfigOverridesApplication(t *testing.T) {
+	tmpDir := t.TempDir()
+	writeConfigFile(t, tmpDir+"/application.yaml", `
+app:
+  name: application-name
+  env: development
+  port: 8080
+`)
+	writeConfigFile(t, tmpDir+"/config.yaml", `
+app:
+  name: config-name
+  port: 9090
+`)
+
+	cfg := new(Config)
+	l := NewLoader(WithConfigPaths(tmpDir), WithFileNames("application", "config"))
+	if err := l.Load(cfg); err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	if cfg.App.Name != "config-name" {
+		t.Errorf("expected legacy config override, got %q", cfg.App.Name)
+	}
+	if cfg.App.Port != 9090 {
+		t.Errorf("expected legacy config port override, got %d", cfg.App.Port)
+	}
+}
+
 func TestLoader_LoadRejectsWildcardCORSInProduction(t *testing.T) {
 	tmp := t.TempDir() + "/config.yaml"
 	if err := os.WriteFile(tmp, []byte(`
@@ -90,6 +203,54 @@ http:
 	l := NewLoader(WithConfigPaths(tmp[:len(tmp)-len("/config.yaml")]), WithFileName("config"))
 	if err := l.Load(cfg); err == nil {
 		t.Fatal("expected Load to reject wildcard CORS in production")
+	}
+}
+
+func TestLoader_LoadRejectsRuntimeMigrationsInProduction(t *testing.T) {
+	tmp := t.TempDir() + "/config.yaml"
+	if err := os.WriteFile(tmp, []byte(`
+app:
+  env: production
+http:
+  cors:
+    allowed_origins: ["https://erg.edu.vn"]
+auth:
+  jwt_secret: "0123456789abcdefghijklmnopqrstuvwxyz"
+  jwt_refresh_secret: "refresh-0123456789abcdefghijklmnopqrstuvwxyz"
+database:
+  password: "prod-db-password"
+  auto_migrate: true
+`), 0644); err != nil {
+		t.Fatalf("write temp config: %v", err)
+	}
+
+	cfg := new(Config)
+	l := NewLoader(WithConfigPaths(tmp[:len(tmp)-len("/config.yaml")]), WithFileName("config"))
+	if err := l.Load(cfg); err == nil {
+		t.Fatal("expected Load to reject runtime automigrate in production")
+	}
+}
+
+func TestLoader_LoadRejectsInvalidTrustedProxyCIDR(t *testing.T) {
+	tmp := t.TempDir() + "/config.yaml"
+	if err := os.WriteFile(tmp, []byte(`
+http:
+  trusted_proxy_cidrs: ["not-a-cidr"]
+`), 0644); err != nil {
+		t.Fatalf("write temp config: %v", err)
+	}
+
+	cfg := new(Config)
+	l := NewLoader(WithConfigPaths(tmp[:len(tmp)-len("/config.yaml")]), WithFileName("config"))
+	if err := l.Load(cfg); err == nil {
+		t.Fatal("expected Load to reject invalid trusted proxy CIDR")
+	}
+}
+
+func writeConfigFile(t *testing.T, path string, content string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatalf("write config %s: %v", path, err)
 	}
 }
 
@@ -115,6 +276,7 @@ QUEUE__REDIS_USERNAME=default
 SECRET_QUEUE__REDIS_PASSWORD=queue-secret
 QUEUE__REDIS_TLS=true
 SECRET_AUTH__JWT_SECRET=jwt-secret
+SECRET_AUTH__JWT_REFRESH_SECRET=refresh-secret
 AUTH__ACCESS_TOKEN_TTL=3h
 `), 0644); err != nil {
 		t.Fatalf("write temp .env: %v", err)
@@ -152,6 +314,9 @@ AUTH__ACCESS_TOKEN_TTL=3h
 	}
 	if cfg.Auth.JWTSecret != "jwt-secret" {
 		t.Errorf("expected auth jwt secret from .env, got %q", cfg.Auth.JWTSecret)
+	}
+	if cfg.Auth.JWTRefreshSecret != "refresh-secret" {
+		t.Errorf("expected auth refresh secret from .env, got %q", cfg.Auth.JWTRefreshSecret)
 	}
 	if cfg.Auth.AccessTokenTTL != 3*time.Hour {
 		t.Errorf("expected access token ttl 3h, got %v", cfg.Auth.AccessTokenTTL)

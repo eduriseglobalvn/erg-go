@@ -14,6 +14,9 @@ type Role string
 const (
 	RoleAdmin     Role = "admin"
 	RoleModerator Role = "moderator"
+	RoleEditor    Role = "editor"
+	RoleTeacher   Role = "teacher"
+	RoleStudent   Role = "student"
 	RoleUser      Role = "user"
 	RoleGuest     Role = "guest"
 )

@@ -22,14 +22,15 @@ import (
 	"erg.ninja/internal/modules/courses"
 	"erg.ninja/internal/modules/crawler"
 	"erg.ninja/internal/modules/documents"
-	"erg.ninja/internal/modules/public_disclosure"
 	"erg.ninja/internal/modules/elearning"
+	"erg.ninja/internal/modules/lms"
 	"erg.ninja/internal/modules/menus"
 	"erg.ninja/internal/modules/notifications"
 	"erg.ninja/internal/modules/operations"
 	"erg.ninja/internal/modules/pages"
 	"erg.ninja/internal/modules/posts"
 	"erg.ninja/internal/modules/profiles"
+	"erg.ninja/internal/modules/public_disclosure"
 	"erg.ninja/internal/modules/recruitment"
 	"erg.ninja/internal/modules/reviews"
 	"erg.ninja/internal/modules/seo"
@@ -171,12 +172,14 @@ func RegisterHealthRoutes(r *gin.Engine, deps *Deps) {
 func legacyRegister(r *gin.Engine, deps *Deps) []func(context.Context) {
 	var stops []func(context.Context)
 
-	if deps.GORMClient != nil {
+	if deps.GORMClient != nil && deps.Cfg.Database.AutoMigrate {
 		if err := postgrescore.AutoMigrate(deps.GORMClient.DB()); err != nil {
 			deps.Log.Warn().Err(err).Msg("routes: postgres core automigrate failed")
 		} else {
 			deps.Log.Info().Msg("routes: postgres core schema ready")
 		}
+	} else if deps.GORMClient != nil {
+		deps.Log.Info().Msg("routes: postgres core automigrate skipped; run cmd/db-migrate when schema changes")
 	}
 
 	accessControlModule := access_control.NewModule(access_control.Deps{
@@ -189,9 +192,15 @@ func legacyRegister(r *gin.Engine, deps *Deps) []func(context.Context) {
 		TenantMongoClient: deps.TenantMongoClient,
 	})
 	accessControlModule.Setup()
-	if deps.GORMClient != nil && deps.Mongo != nil {
+	if deps.GORMClient != nil && deps.Mongo != nil && deps.Cfg.Database.RunBackfills {
+		backfillTimeout := deps.Cfg.Database.MigrationTimeout
+		if backfillTimeout <= 0 {
+			backfillTimeout = 2 * time.Minute
+		}
+		backfillCtx, cancel := context.WithTimeout(context.Background(), backfillTimeout)
+		defer cancel()
 		if _, err := postgrescore.BackfillLegacyAuthFromMongo(
-			context.Background(),
+			backfillCtx,
 			deps.GORMClient.DB(),
 			deps.Mongo,
 			deps.Log,
@@ -200,14 +209,29 @@ func legacyRegister(r *gin.Engine, deps *Deps) []func(context.Context) {
 			deps.Log.Warn().Err(err).Msg("routes: legacy auth backfill failed")
 		}
 		if _, err := postgrescore.BackfillLegacyRecruitmentFromMongo(
-			context.Background(),
+			backfillCtx,
 			deps.GORMClient.DB(),
 			deps.Mongo,
 			deps.Log,
 		); err != nil {
 			deps.Log.Warn().Err(err).Msg("routes: legacy recruitment backfill failed")
 		}
+	} else if deps.GORMClient != nil && deps.Mongo != nil {
+		deps.Log.Info().Msg("routes: legacy postgres backfills skipped; run cmd/db-migrate -backfill explicitly")
 	}
+
+	opsModule := operations.NewModule(operations.Deps{
+		Mongo:             deps.Mongo,
+		GORMClient:        deps.GORMClient,
+		Redis:             deps.Redis,
+		Log:               deps.Log,
+		Cfg:               deps.Cfg,
+		JWTValidator:      deps.JWTValidator,
+		TenantMongoClient: deps.TenantMongoClient,
+	})
+	opsModule.Setup()
+	r.Use(middleware.FirewallMiddleware(opsModule.Service()))
+
 	accessControlModule.RegisterRoutes(r)
 	stops = append(stops, func(ctx context.Context) {
 		if err := accessControlModule.Stop(ctx); err != nil {
@@ -369,6 +393,7 @@ func legacyRegister(r *gin.Engine, deps *Deps) []func(context.Context) {
 		Redis:             deps.Redis,
 		Log:               deps.Log,
 		Cfg:               deps.Cfg,
+		JWTValidator:      deps.JWTValidator,
 		TenantMongoClient: deps.TenantMongoClient,
 		R2:                deps.R2,
 		GDrive:            deps.GDrive,
@@ -387,6 +412,7 @@ func legacyRegister(r *gin.Engine, deps *Deps) []func(context.Context) {
 		Cfg:               deps.Cfg,
 		TenantMongoClient: deps.TenantMongoClient,
 		DocSvc:            docsModule.Service(),
+		JWTValidator:      deps.JWTValidator,
 	})
 	disclosureModule.Setup()
 	disclosureModule.RegisterRoutes(r)
@@ -442,6 +468,20 @@ func legacyRegister(r *gin.Engine, deps *Deps) []func(context.Context) {
 	stops = append(stops, func(ctx context.Context) {
 		if err := elearningModule.Stop(ctx); err != nil {
 			deps.Log.WarnContext(ctx).Err(err).Msg("routes: elearning module stop failed")
+		}
+	})
+
+	lmsModule := lms.NewModule(lms.Deps{
+		Mongo:        deps.Mongo,
+		Log:          deps.Log,
+		Cfg:          deps.Cfg,
+		JWTValidator: deps.JWTValidator,
+	})
+	lmsModule.Setup()
+	lmsModule.RegisterRoutes(r)
+	stops = append(stops, func(ctx context.Context) {
+		if err := lmsModule.Stop(ctx); err != nil {
+			deps.Log.WarnContext(ctx).Err(err).Msg("routes: lms module stop failed")
 		}
 	})
 
@@ -581,25 +621,12 @@ func legacyRegister(r *gin.Engine, deps *Deps) []func(context.Context) {
 		}
 	})
 
-	opsModule := operations.NewModule(operations.Deps{
-		Mongo:             deps.Mongo,
-		GORMClient:        deps.GORMClient,
-		Redis:             deps.Redis,
-		Log:               deps.Log,
-		Cfg:               deps.Cfg,
-		JWTValidator:      deps.JWTValidator,
-		TenantMongoClient: deps.TenantMongoClient,
-	})
-	opsModule.Setup()
 	opsModule.RegisterRoutes(r)
 	stops = append(stops, func(ctx context.Context) {
 		if err := opsModule.Stop(ctx); err != nil {
 			deps.Log.WarnContext(ctx).Err(err).Msg("routes: operations module stop failed")
 		}
 	})
-
-	// Global Firewall Middleware
-	r.Use(middleware.FirewallMiddleware(opsModule.Service()))
 
 	// Start Queue Server if configured
 	if deps.QueueServer != nil {

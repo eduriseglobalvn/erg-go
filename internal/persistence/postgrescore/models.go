@@ -48,6 +48,8 @@ type AuthSession struct {
 	ID               string     `gorm:"column:id;type:varchar(24);primaryKey"`
 	UserID           string     `gorm:"column:user_id;type:varchar(24);not null;index:idx_user_sessions_user,priority:1"`
 	SessionID        string     `gorm:"column:session_id;type:varchar(128);not null;uniqueIndex:idx_user_sessions_session_tenant,priority:1"`
+	DeviceID         string     `gorm:"column:device_id;type:varchar(128);index"`
+	DeviceName       string     `gorm:"column:device_name;type:varchar(255)"`
 	IPAddress        string     `gorm:"column:ip_address;type:varchar(128)"`
 	UserAgent        string     `gorm:"column:user_agent;type:text"`
 	RefreshTokenHash string     `gorm:"column:refresh_token_hash;type:text;not null"`
@@ -55,6 +57,7 @@ type AuthSession struct {
 	LastActiveAt     time.Time  `gorm:"column:last_active_at;not null"`
 	ExpiresAt        time.Time  `gorm:"column:expires_at;not null;index:idx_user_sessions_tenant_expiry,priority:2"`
 	RevokedAt        *time.Time `gorm:"column:revoked_at"`
+	RevokedReason    string     `gorm:"column:revoked_reason;type:varchar(64)"`
 	CreatedAt        time.Time  `gorm:"column:created_at;not null"`
 	UpdatedAt        time.Time  `gorm:"column:updated_at;not null"`
 }
@@ -73,6 +76,47 @@ type AuthPin struct {
 }
 
 func (AuthPin) TableName() string { return "auth_pins" }
+
+// AuthLoginAttempt stores every login attempt for audit, brute-force detection,
+// and security operations dashboards.
+type AuthLoginAttempt struct {
+	ID                 string    `gorm:"column:id;type:varchar(24);primaryKey"`
+	TenantID           string    `gorm:"column:tenant_id;type:varchar(64);not null;index:idx_login_attempts_tenant_created,priority:1"`
+	UserID             string    `gorm:"column:user_id;type:varchar(24);index"`
+	AttemptedEmail     string    `gorm:"column:attempted_email;type:varchar(255);index"`
+	AttemptedEmailHash string    `gorm:"column:attempted_email_hash;type:varchar(64);index"`
+	IPAddress          string    `gorm:"column:ip_address;type:varchar(128);not null;index:idx_login_attempts_ip_created,priority:1"`
+	CountryCode        string    `gorm:"column:country_code;type:varchar(8);index"`
+	CountryName        string    `gorm:"column:country_name;type:varchar(128)"`
+	ContinentCode      string    `gorm:"column:continent_code;type:varchar(8);index"`
+	UserAgent          string    `gorm:"column:user_agent;type:text"`
+	DeviceID           string    `gorm:"column:device_id;type:varchar(128);index"`
+	DeviceName         string    `gorm:"column:device_name;type:varchar(255)"`
+	Result             string    `gorm:"column:result;type:varchar(32);not null;index"`
+	Reason             string    `gorm:"column:reason;type:varchar(64);index"`
+	CreatedAt          time.Time `gorm:"column:created_at;not null;index:idx_login_attempts_tenant_created,priority:2;index:idx_login_attempts_ip_created,priority:2"`
+}
+
+func (AuthLoginAttempt) TableName() string { return "auth_login_attempts" }
+
+// FirewallRule stores durable IP block and allowlist rules. Redis may cache
+// these records, but PostgreSQL is the source of truth.
+type FirewallRule struct {
+	ID        string     `gorm:"column:id;type:varchar(24);primaryKey"`
+	Entry     string     `gorm:"column:entry;type:varchar(128);not null;index:idx_firewall_rules_type_entry_active,priority:2;index"`
+	RuleType  string     `gorm:"column:rule_type;type:varchar(32);not null;index:idx_firewall_rules_type_entry_active,priority:1;index"`
+	Reason    string     `gorm:"column:reason;type:text"`
+	Source    string     `gorm:"column:source;type:varchar(64)"`
+	Active    bool       `gorm:"column:active;not null;default:true;index:idx_firewall_rules_type_entry_active,priority:3;index"`
+	ExpiresAt *time.Time `gorm:"column:expires_at;index"`
+	RevokedAt *time.Time `gorm:"column:revoked_at"`
+	RevokedBy string     `gorm:"column:revoked_by;type:varchar(24)"`
+	CreatedBy string     `gorm:"column:created_by;type:varchar(24)"`
+	CreatedAt time.Time  `gorm:"column:created_at;not null;index"`
+	UpdatedAt time.Time  `gorm:"column:updated_at;not null"`
+}
+
+func (FirewallRule) TableName() string { return "firewall_rules" }
 
 // ACPermission stores a granular permission.
 type ACPermission struct {

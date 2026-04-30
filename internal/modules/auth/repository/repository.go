@@ -346,11 +346,14 @@ func (r *Repo) CreateSession(ctx context.Context, session *entities.UserSession)
 	now := time.Now().UTC()
 	session.ID = bson.NewObjectID()
 	session.CreatedAt = now
+	session.LastActiveAt = now
 
 	record := &postgrescore.AuthSession{
 		ID:               session.ID.Hex(),
 		UserID:           session.UserID.Hex(),
 		SessionID:        session.SessionID,
+		DeviceID:         session.DeviceID,
+		DeviceName:       session.DeviceName,
 		IPAddress:        session.IPAddress,
 		UserAgent:        session.UserAgent,
 		RefreshTokenHash: session.RefreshToken,
@@ -358,6 +361,7 @@ func (r *Repo) CreateSession(ctx context.Context, session *entities.UserSession)
 		LastActiveAt:     now,
 		ExpiresAt:        session.ExpiresAt.UTC(),
 		RevokedAt:        session.RevokedAt,
+		RevokedReason:    session.RevokedReason,
 		CreatedAt:        now,
 		UpdatedAt:        now,
 	}
@@ -392,6 +396,11 @@ func (r *Repo) FindSessionByID(ctx context.Context, sessionID string, tenantID s
 
 // RevokeSession marks a session as revoked by setting RevokedAt.
 func (r *Repo) RevokeSession(ctx context.Context, sessionID string, tenantID string) error {
+	return r.RevokeSessionWithReason(ctx, sessionID, tenantID, "logout")
+}
+
+// RevokeSessionWithReason marks a session as revoked and stores why it was revoked.
+func (r *Repo) RevokeSessionWithReason(ctx context.Context, sessionID string, tenantID string, reason string) error {
 	if err := r.ensureDB(); err != nil {
 		return err
 	}
@@ -404,6 +413,7 @@ func (r *Repo) RevokeSession(ctx context.Context, sessionID string, tenantID str
 		Where("session_id = ? AND tenant_id = ?", sessionID, tenantID).
 		Updates(map[string]any{
 			"revoked_at":     &now,
+			"revoked_reason": strings.TrimSpace(reason),
 			"last_active_at": now,
 			"updated_at":     now,
 		})
@@ -418,6 +428,11 @@ func (r *Repo) RevokeSession(ctx context.Context, sessionID string, tenantID str
 
 // RevokeAllUserSessions revokes every non-revoked session for a user.
 func (r *Repo) RevokeAllUserSessions(ctx context.Context, userID bson.ObjectID, tenantID string) error {
+	return r.RevokeAllUserSessionsWithReason(ctx, userID, tenantID, "logout")
+}
+
+// RevokeAllUserSessionsWithReason revokes every non-revoked session for a user and stores why.
+func (r *Repo) RevokeAllUserSessionsWithReason(ctx context.Context, userID bson.ObjectID, tenantID string, reason string) error {
 	if err := r.ensureDB(); err != nil {
 		return err
 	}
@@ -432,8 +447,9 @@ func (r *Repo) RevokeAllUserSessions(ctx context.Context, userID bson.ObjectID, 
 		query = query.Where("tenant_id = ?", tenantID)
 	}
 	if err := query.Updates(map[string]any{
-		"revoked_at": &now,
-		"updated_at": now,
+		"revoked_at":     &now,
+		"revoked_reason": strings.TrimSpace(reason),
+		"updated_at":     now,
 	}).Error; err != nil {
 		return fmt.Errorf("auth.repository.revokeAllUserSessions: %w", err)
 	}
@@ -780,16 +796,20 @@ func mapAuthSessionRecord(record *postgrescore.AuthSession) (*entities.UserSessi
 		return nil, err
 	}
 	return &entities.UserSession{
-		ID:           id,
-		UserID:       userID,
-		SessionID:    record.SessionID,
-		IPAddress:    record.IPAddress,
-		UserAgent:    record.UserAgent,
-		RefreshToken: record.RefreshTokenHash,
-		TenantID:     record.TenantID,
-		ExpiresAt:    record.ExpiresAt,
-		RevokedAt:    record.RevokedAt,
-		CreatedAt:    record.CreatedAt,
+		ID:            id,
+		UserID:        userID,
+		SessionID:     record.SessionID,
+		DeviceID:      record.DeviceID,
+		DeviceName:    record.DeviceName,
+		IPAddress:     record.IPAddress,
+		UserAgent:     record.UserAgent,
+		RefreshToken:  record.RefreshTokenHash,
+		TenantID:      record.TenantID,
+		ExpiresAt:     record.ExpiresAt,
+		RevokedAt:     record.RevokedAt,
+		RevokedReason: record.RevokedReason,
+		LastActiveAt:  record.LastActiveAt,
+		CreatedAt:     record.CreatedAt,
 	}, nil
 }
 

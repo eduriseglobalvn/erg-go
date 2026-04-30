@@ -3,9 +3,14 @@
 .env.*
 !.env.example
 config.yaml
+config/application.local.yaml
+config/application.*.local.yaml
+config/application.staging.yaml
+config/application.production.yaml
 
 # Local tool state
 .cache/
+.gocache/
 .go_cache/
 .omc/
 .claude/
@@ -16,6 +21,8 @@ tmp/
 server
 erg-server
 plugin-server
+db-migrate
+db-migrate.exe
 *.test
 
 # Test and coverage output

@@ -135,7 +135,12 @@ func (h *HealthHandler) getActiveConversationCount(ctx context.Context) (int64, 
 func getMemMB() int64 {
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
-	return int64(m.Alloc) / (1024 * 1024)
+	const maxInt64AsUint64 = uint64(1<<63 - 1)
+	mb := m.Alloc / (1024 * 1024)
+	if mb > maxInt64AsUint64 {
+		return int64(maxInt64AsUint64)
+	}
+	return int64(mb)
 }
 
 // itoa converts an int to a string without importing strconv.
