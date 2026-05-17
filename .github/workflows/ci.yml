@@ -7,7 +7,7 @@ on:
     branches: [main, develop]
 
 env:
-  GO_VERSION: "1.25"
+  GO_VERSION: "1.26.2"
   GOLANGCI_LINT_VERSION: "v1.59.1"
 
 jobs:
@@ -68,7 +68,7 @@ jobs:
 
   # ── Security scan ───────────────────────────────────────────────────────────
   security:
-    name: Security (gosec + secrets)
+    name: Security (gosec + gitleaks + govulncheck)
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -81,23 +81,42 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
 
+      - name: Download Go module dependencies
+        run: go mod download
+
+      - name: Prepare security report directory
+        run: mkdir -p .gocache/security
+
+      - name: Run govulncheck
+        run: |
+          set -o pipefail
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck -scan=package ./... | tee .gocache/security/govulncheck.txt
+
       - name: Install gosec
         run: go install github.com/securego/gosec/v2/cmd/gosec@latest
 
       - name: Run gosec
-        run: gosec -severity medium -confidence medium -fmt sarif -out gosec-results.sarif ./...
+        run: gosec -severity medium -confidence medium -fmt sarif -out .gocache/security/gosec.sarif ./...
 
       - name: Upload gosec results
         uses: github/codeql-action/upload-sarif@v3
         if: success() || failure()
         with:
-          sarif_file: gosec-results.sarif
+          sarif_file: .gocache/security/gosec.sarif
           category: gosec
 
       - name: Secret scan
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          go install github.com/zricethezav/gitleaks/v8@latest
+          gitleaks detect --source . --redact --report-format json --report-path .gocache/security/gitleaks.json --config .gitleaks.toml --exit-code 1
+
+      - name: Upload security reports
+        uses: actions/upload-artifact@v4
+        if: success() || failure()
+        with:
+          name: security-reports
+          path: .gocache/security/
 
   # ── Cross-compile ───────────────────────────────────────────────────────────
   build:

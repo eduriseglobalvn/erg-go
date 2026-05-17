@@ -1,6 +1,7 @@
 package postgrescore
 
 import (
+	"context"
 	"fmt"
 
 	"gorm.io/gorm"
@@ -35,8 +36,22 @@ func AutoMigrate(db *gorm.DB) error {
 		&WorkShift{},
 		&RecruitmentJob{},
 		&RecruitmentCandidate{},
+		&Center{},
+		&UserAccessScope{},
+		&CommunityTopic{},
+		&CommunityPost{},
+		&CommunityMedia{},
+		&CommunityComment{},
+		&CommunityReaction{},
+		&CommunityFollow{},
 	); err != nil {
 		return fmt.Errorf("postgrescore.AutoMigrate: %w", err)
 	}
+
+	// Seed default centers (idempotent)
+	if err := SeedCenters(context.Background(), db); err != nil {
+		return fmt.Errorf("postgrescore.SeedCenters: %w", err)
+	}
+
 	return nil
 }

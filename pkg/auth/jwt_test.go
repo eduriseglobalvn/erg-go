@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -267,5 +268,46 @@ func TestIssuePairUsesConfiguredIssuerAndDedicatedSessionClaim(t *testing.T) {
 	}
 	if refreshClaims.SessionID != "session-xyz" {
 		t.Fatalf("refresh session_id = %q, want %q", refreshClaims.SessionID, "session-xyz")
+	}
+}
+
+func TestJWTClaimsEnterpriseAuthFieldsRoundTripJSON(t *testing.T) {
+	claims := JWTClaims{
+		UserID:            "user-1",
+		TenantID:          "tenant-1",
+		AccountType:       "staff",
+		AccessLevel:       "cms",
+		Portal:            "lms",
+		Portals:           []string{"lms", "cms"},
+		Permissions:       []string{"lms.grade.read"},
+		DeniedPermissions: []string{"lms.grade.update"},
+		Roles:             []string{"lms.teacher"},
+		Attributes:        map[string]string{"campus": "hanoi"},
+	}
+
+	raw, err := json.Marshal(claims)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+
+	var got JWTClaims
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+
+	if got.TenantID != claims.TenantID || got.Portal != claims.Portal {
+		t.Fatalf("claims = %#v, want tenant %q and portal %q", got, claims.TenantID, claims.Portal)
+	}
+	if got.AccountType != "staff" || got.AccessLevel != "cms" {
+		t.Fatalf("account access = %q/%q, want staff/cms", got.AccountType, got.AccessLevel)
+	}
+	if len(got.Portals) != 2 || got.Portals[1] != "cms" {
+		t.Fatalf("portals = %v, want [lms cms]", got.Portals)
+	}
+	if len(got.DeniedPermissions) != 1 || got.DeniedPermissions[0] != "lms.grade.update" {
+		t.Fatalf("denied permissions = %v", got.DeniedPermissions)
+	}
+	if got.Attributes["campus"] != "hanoi" {
+		t.Fatalf("attributes = %v, want campus hanoi", got.Attributes)
 	}
 }

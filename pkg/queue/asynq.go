@@ -154,6 +154,7 @@ func NewAsynqServer(cfg config.QueueConfig, opts ...ServerOption) (*AsynqServer,
 				PriorityDefault:  5,
 				PriorityLow:      2,
 			},
+			Logger: asynqLogAdapter{log: s.log},
 			RetryDelayFunc: func(n int, e error, t *asynq.Task) time.Duration {
 				if cfg.RetryBackoff {
 					return retryDelayWithJitter(cfg.RetryDelay, n, t)
@@ -232,6 +233,11 @@ func WithTimeout(d time.Duration) Option {
 	return Option{opt: asynq.Timeout(d)}
 }
 
+// WithRetention keeps completed task metadata and result for the given duration.
+func WithRetention(d time.Duration) Option {
+	return Option{opt: asynq.Retention(d)}
+}
+
 // WithDeadline sets the hard deadline for the task.
 func WithDeadline(t time.Time) Option {
 	return Option{opt: asynq.Deadline(t)}
@@ -294,4 +300,35 @@ func stableTaskJitter(task *asynq.Task, max time.Duration) time.Duration {
 		return max
 	}
 	return time.Duration(int64(jitter))
+}
+
+type asynqLogAdapter struct {
+	log *logger.Logger
+}
+
+func (a asynqLogAdapter) Debug(args ...interface{}) {
+	a.logger().Debug().Msg(fmt.Sprint(args...))
+}
+
+func (a asynqLogAdapter) Info(args ...interface{}) {
+	a.logger().Info().Msg(fmt.Sprint(args...))
+}
+
+func (a asynqLogAdapter) Warn(args ...interface{}) {
+	a.logger().Warn().Msg(fmt.Sprint(args...))
+}
+
+func (a asynqLogAdapter) Error(args ...interface{}) {
+	a.logger().Error().Msg(fmt.Sprint(args...))
+}
+
+func (a asynqLogAdapter) Fatal(args ...interface{}) {
+	a.logger().Fatal().Msg(fmt.Sprint(args...))
+}
+
+func (a asynqLogAdapter) logger() *logger.Logger {
+	if a.log == nil {
+		return logger.NoOp()
+	}
+	return a.log
 }

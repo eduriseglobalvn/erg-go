@@ -70,20 +70,31 @@ auth:
   jwt_refresh_secret: ""
   jwt_public_key: ""
   google_bridge_secret: ""
+  google_client_id: ""
+  google_client_ids: []
   jwt_issuer: erg-server
   jwt_algorithms: [HS256]
   bearer_prefix: Bearer
   skip_paths: [/healthz, /ready, /metrics, /swagger]
   access_token_ttl: 3h
   refresh_token_ttl: 168h
-  argon2_memory: 65536
-  argon2_iterations: 3
+  argon2_memory: 32768
+  argon2_iterations: 2
   max_failed_login: 5
   failed_login_window: 15m
   block_duration: 15m
   geo_block_enabled: true
   block_unknown_geo: false
   allowed_continents: [AS]
+  cookie:
+    enabled: true
+    # Empty domain means host-only cookie. Production can set ".erg.edu.vn"
+    # so admin/elearning/API subdomains share one browser session.
+    domain: ""
+    secure: false
+    same_site: lax
+    access_token_name: erg_access_token
+    refresh_token_name: erg_refresh_token
 
 http:
   host: 0.0.0.0
@@ -100,10 +111,34 @@ http:
   cors:
     allowed_origins:
       - http://localhost:3000
+      - http://127.0.0.1:3000
+      - http://localhost:3001
+      - http://127.0.0.1:3001
+      - http://erg.edu.local:3000
+      - http://admin.erg.edu.local:3000
+      - http://erg.edu.local:3001
+      - http://admin.erg.edu.local:3001
+      - http://hoclieu.erg.edu.local:3001
+      - http://lms.erg.edu.local:3001
+      - http://elearning.erg.edu.local:3001
+      - http://elearning.erg.edu.local:3000
+      - http://erg.edu.vn:3001
+      - http://admin.erg.edu.vn:3001
+      - http://hoclieu.erg.edu.vn:3001
+      - http://lms.erg.edu.vn:3001
+      - http://elearning.erg.edu.vn:3001
+      - https://hoclieu.erg.edu.vn:3001
+      - https://lms.erg.edu.vn:3001
+      - https://elearning.erg.edu.vn:3001
       - http://localhost:3003
+      - https://erg.edu.vn
+      - https://admin.erg.edu.vn
+      - https://hoclieu.erg.edu.vn
+      - https://lms.erg.edu.vn
+      - https://elearning.erg.edu.vn
     allowed_methods: [GET, POST, PUT, DELETE, PATCH, OPTIONS]
     allowed_headers: [Accept, Authorization, Content-Type, X-Tenant-ID, X-Request-ID, X-Trace-ID]
-    exposed_headers: [X-Request-ID, X-Trace-ID]
+    exposed_headers: [X-Request-ID, X-Trace-ID, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset, X-RateLimit-User-Limit, X-RateLimit-User-Remaining, X-RateLimit-User-Reset, X-RateLimit-IpUser-Limit, X-RateLimit-IpUser-Remaining, X-RateLimit-IpUser-Reset, Retry-After]
     allow_credentials: true
     max_age: 86400
 
@@ -124,9 +159,28 @@ r2:
   region: auto
 
 ai:
+  provider: groq
+  api_key_encryption_secret: ""
   gemini_api_key: ""
   gemini_model: gemini-3-flash-preview
   gemini_timeout: 10s
+  groq_api_key: ""
+  groq_model: openai/gpt-oss-120b
+  groq_base_url: https://api.groq.com/openai/v1
+  groq_timeout: 30s
+  groq_max_completion_tokens: 4096
+  groq_temperature: 1
+  groq_reasoning_effort: medium
+  huggingface_image_api_key: ""
+  huggingface_image_provider: fal-ai
+  huggingface_image_model: black-forest-labs/FLUX.1-Krea-dev
+  huggingface_image_base_url: https://router.huggingface.co
+  huggingface_image_timeout: 90s
+  huggingface_image_width: 1024
+  huggingface_image_height: 576
+  huggingface_image_steps: 28
+  huggingface_image_guidance: 7
+  huggingface_image_negative_prompt: text, watermark, logo, blurry, distorted, low quality, extra fingers
   cache_ttl: 24h
   batch_size: 10
 
@@ -170,3 +224,10 @@ tenant:
   isolation: field
   default_id: default
   definitions: {}
+
+lifecycle:
+  auth_bootstrap_admin_on_startup: false
+  profile_backfill_on_startup: false
+  operation_seed_on_startup: false
+  trending_refresh_on_startup: false
+  lms_seed_on_startup: false

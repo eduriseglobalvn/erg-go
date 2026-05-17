@@ -47,6 +47,7 @@ func (AuthUser) TableName() string { return "users" }
 type AuthSession struct {
 	ID               string     `gorm:"column:id;type:varchar(24);primaryKey"`
 	UserID           string     `gorm:"column:user_id;type:varchar(24);not null;index:idx_user_sessions_user,priority:1"`
+	User             AuthUser   `gorm:"foreignKey:UserID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE"`
 	SessionID        string     `gorm:"column:session_id;type:varchar(128);not null;uniqueIndex:idx_user_sessions_session_tenant,priority:1"`
 	DeviceID         string     `gorm:"column:device_id;type:varchar(128);index"`
 	DeviceName       string     `gorm:"column:device_name;type:varchar(255)"`
@@ -172,7 +173,9 @@ func (ACUserPermissionOverride) TableName() string { return "user_permissions" }
 // UserRole joins users and roles.
 type UserRole struct {
 	UserID    string    `gorm:"column:user_id;type:varchar(24);primaryKey"`
+	User      AuthUser  `gorm:"foreignKey:UserID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE"`
 	RoleID    string    `gorm:"column:role_id;type:varchar(24);primaryKey"`
+	Role      ACRole    `gorm:"foreignKey:RoleID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE"`
 	CreatedAt time.Time `gorm:"column:created_at;not null"`
 }
 
@@ -180,9 +183,11 @@ func (UserRole) TableName() string { return "user_roles" }
 
 // RolePermission joins roles and permissions.
 type RolePermission struct {
-	RoleID       string    `gorm:"column:role_id;type:varchar(24);primaryKey"`
-	PermissionID string    `gorm:"column:permission_id;type:varchar(24);primaryKey"`
-	CreatedAt    time.Time `gorm:"column:created_at;not null"`
+	RoleID       string       `gorm:"column:role_id;type:varchar(24);primaryKey"`
+	Role         ACRole       `gorm:"foreignKey:RoleID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE"`
+	PermissionID string       `gorm:"column:permission_id;type:varchar(24);primaryKey"`
+	Permission   ACPermission `gorm:"foreignKey:PermissionID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE"`
+	CreatedAt    time.Time    `gorm:"column:created_at;not null"`
 }
 
 func (RolePermission) TableName() string { return "role_permissions" }
@@ -223,6 +228,7 @@ type Post struct {
 	ViewCount        int64          `gorm:"column:view_count;not null;default:0"`
 	CommentCount     int64          `gorm:"column:comment_count;not null;default:0"`
 	CategoryID       string         `gorm:"column:category_id;type:varchar(24);not null;index:idx_posts_status_category_created,priority:2"`
+	Category         PostCategory   `gorm:"foreignKey:CategoryID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:RESTRICT"`
 	IsCreatedByAI    bool           `gorm:"column:is_created_by_ai;not null;default:false"`
 	AIPrompt         string         `gorm:"column:ai_prompt;type:text"`
 	AIJobID          string         `gorm:"column:ai_job_id;type:varchar(255);index"`
@@ -293,6 +299,7 @@ func (SystemConfig) TableName() string { return "system_configs" }
 type Profile struct {
 	ID                 string     `gorm:"column:id;type:varchar(24);primaryKey"`
 	UserID             string     `gorm:"column:user_id;type:varchar(24);not null;uniqueIndex"`
+	User               AuthUser   `gorm:"foreignKey:UserID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE"`
 	FullName           string     `gorm:"column:full_name;type:varchar(255)"`
 	Bio                string     `gorm:"column:bio;type:text"`
 	Phone              string     `gorm:"column:phone;type:varchar(64)"`
@@ -318,6 +325,7 @@ func (Profile) TableName() string { return "profiles" }
 type Certificate struct {
 	ID         string     `gorm:"column:id;type:varchar(24);primaryKey"`
 	UserID     string     `gorm:"column:user_id;type:varchar(24);not null;index"`
+	User       AuthUser   `gorm:"foreignKey:UserID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE"`
 	Name       string     `gorm:"column:name;type:varchar(255);not null"`
 	IssuedBy   string     `gorm:"column:issued_by;type:varchar(255)"`
 	IssueDate  *time.Time `gorm:"column:issue_date"`
@@ -333,6 +341,7 @@ func (Certificate) TableName() string { return "certificates" }
 type SocialAccount struct {
 	ID         string    `gorm:"column:id;type:varchar(24);primaryKey"`
 	UserID     string    `gorm:"column:user_id;type:varchar(24);not null;index"`
+	User       AuthUser  `gorm:"foreignKey:UserID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE"`
 	Provider   string    `gorm:"column:provider;type:varchar(64);not null;uniqueIndex:idx_social_accounts_provider_user,priority:1"`
 	ProviderID string    `gorm:"column:provider_id;type:varchar(255);not null;uniqueIndex:idx_social_accounts_provider_user,priority:2"`
 	Email      string    `gorm:"column:email;type:varchar(255)"`
@@ -346,6 +355,7 @@ func (SocialAccount) TableName() string { return "social_accounts" }
 type CourseProgress struct {
 	ID              string     `gorm:"column:id;type:varchar(24);primaryKey"`
 	UserID          string     `gorm:"column:user_id;type:varchar(24);not null;index:idx_course_progress_user_course,priority:1"`
+	User            AuthUser   `gorm:"foreignKey:UserID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE"`
 	CourseID        string     `gorm:"column:course_id;type:varchar(24);not null;index:idx_course_progress_user_course,priority:2"`
 	LessonID        string     `gorm:"column:lesson_id;type:varchar(24);not null;index"`
 	IsCompleted     bool       `gorm:"column:is_completed;not null;default:false"`
@@ -363,6 +373,7 @@ func (CourseProgress) TableName() string { return "course_progress" }
 type WorkShift struct {
 	ID              string     `gorm:"column:id;type:varchar(24);primaryKey"`
 	UserID          string     `gorm:"column:user_id;type:varchar(24);not null;index"`
+	User            AuthUser   `gorm:"foreignKey:UserID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:RESTRICT"`
 	SchoolID        string     `gorm:"column:school_id;type:varchar(24);index"`
 	Room            string     `gorm:"column:room;type:varchar(255)"`
 	TeachingSubject string     `gorm:"column:teaching_subject;type:varchar(255)"`
@@ -440,3 +451,156 @@ type RecruitmentCandidate struct {
 }
 
 func (RecruitmentCandidate) TableName() string { return "candidates" }
+
+// Center stores education units like schools, centers, or the global system node.
+type Center struct {
+	ID          string    `gorm:"column:id;type:varchar(24);primaryKey"`
+	Name        string    `gorm:"column:name;type:varchar(255);not null"`
+	Slug        string    `gorm:"column:slug;type:varchar(255);not null;uniqueIndex"`
+	Type        string    `gorm:"column:type;type:varchar(32);not null"` // system, school, center
+	ParentID    *string   `gorm:"column:parent_id;type:varchar(24);index"`
+	Parent      *Center   `gorm:"foreignKey:ParentID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:SET NULL"`
+	LogoURL     string    `gorm:"column:logo_url;type:text"`
+	Description string    `gorm:"column:description;type:text"`
+	Status      string    `gorm:"column:status;type:varchar(32);not null;default:'active'"`
+	CreatedAt   time.Time `gorm:"column:created_at;not null"`
+	UpdatedAt   time.Time `gorm:"column:updated_at;not null"`
+}
+
+func (Center) TableName() string { return "centers" }
+
+// UserAccessScope defines which education units (Centers) a user can access and with what modules.
+type UserAccessScope struct {
+	ID        string    `gorm:"column:id;type:varchar(24);primaryKey"`
+	UserID    string    `gorm:"column:user_id;type:varchar(24);not null;index"`
+	User      AuthUser  `gorm:"foreignKey:UserID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE"`
+	CenterID  string    `gorm:"column:center_id;type:varchar(24);not null;index"` // Reference to Center ID
+	Center    Center    `gorm:"foreignKey:CenterID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE"`
+	Modules   string    `gorm:"column:modules;type:text"`     // JSON array of strings: ["lms", "hoclieu"]
+	Role      string    `gorm:"column:role;type:varchar(32)"` // context-specific role: admin, teacher, etc.
+	CreatedAt time.Time `gorm:"column:created_at;not null"`
+	UpdatedAt time.Time `gorm:"column:updated_at;not null"`
+}
+
+func (UserAccessScope) TableName() string { return "user_access_scopes" }
+
+// CommunityTopic stores teacher-community forum boards/channels. It is kept in
+// PostgreSQL because topics have clear relational counters and follow state.
+type CommunityTopic struct {
+	ID            string         `gorm:"column:id;type:varchar(24);primaryKey"`
+	TenantID      string         `gorm:"column:tenant_id;type:varchar(64);not null;uniqueIndex:idx_community_topics_tenant_slug,priority:1;index:idx_community_topics_group_order,priority:1"`
+	Slug          string         `gorm:"column:slug;type:varchar(160);not null;uniqueIndex:idx_community_topics_tenant_slug,priority:2"`
+	Name          string         `gorm:"column:name;type:varchar(255);not null"`
+	Description   string         `gorm:"column:description;type:text"`
+	GroupName     string         `gorm:"column:group_name;type:varchar(128);not null;index:idx_community_topics_group_order,priority:2"`
+	Icon          string         `gorm:"column:icon;type:varchar(64)"`
+	Color         string         `gorm:"column:color;type:varchar(32)"`
+	SortOrder     int            `gorm:"column:sort_order;not null;default:0;index:idx_community_topics_group_order,priority:3"`
+	IsFeatured    bool           `gorm:"column:is_featured;not null;default:false;index"`
+	ThreadCount   int64          `gorm:"column:thread_count;not null;default:0"`
+	PostCount     int64          `gorm:"column:post_count;not null;default:0"`
+	FollowerCount int64          `gorm:"column:follower_count;not null;default:0"`
+	LastPostID    string         `gorm:"column:last_post_id;type:varchar(24);index"`
+	LastPostAt    *time.Time     `gorm:"column:last_post_at;index"`
+	CreatedBy     string         `gorm:"column:created_by;type:varchar(24);index"`
+	CreatedAt     time.Time      `gorm:"column:created_at;not null"`
+	UpdatedAt     time.Time      `gorm:"column:updated_at;not null"`
+	DeletedAt     gorm.DeletedAt `gorm:"column:deleted_at;index"`
+}
+
+func (CommunityTopic) TableName() string { return "community_topics" }
+
+// CommunityPost stores forum/social posts. Media bytes are not stored here:
+// CommunityMedia holds only object-storage metadata and public/proxy URLs.
+type CommunityPost struct {
+	ID             string         `gorm:"column:id;type:varchar(24);primaryKey"`
+	TenantID       string         `gorm:"column:tenant_id;type:varchar(64);not null;index:idx_community_posts_tenant_created,priority:1"`
+	TopicID        string         `gorm:"column:topic_id;type:varchar(24);not null;index:idx_community_posts_topic_created,priority:1"`
+	Topic          CommunityTopic `gorm:"foreignKey:TopicID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:RESTRICT"`
+	AuthorID       string         `gorm:"column:author_id;type:varchar(24);not null;index:idx_community_posts_author_created,priority:1"`
+	Author         AuthUser       `gorm:"foreignKey:AuthorID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:RESTRICT"`
+	Title          string         `gorm:"column:title;type:varchar(500)"`
+	Content        string         `gorm:"column:content;type:text;not null"`
+	PostType       string         `gorm:"column:post_type;type:varchar(32);not null;default:'discussion';index"`
+	Status         string         `gorm:"column:status;type:varchar(32);not null;default:'open';index"`
+	Visibility     string         `gorm:"column:visibility;type:varchar(32);not null;default:'community';index"`
+	TagsJSON       string         `gorm:"column:tags_json;type:text"`
+	IsPinned       bool           `gorm:"column:is_pinned;not null;default:false;index"`
+	IsLocked       bool           `gorm:"column:is_locked;not null;default:false"`
+	ViewCount      int64          `gorm:"column:view_count;not null;default:0"`
+	CommentCount   int64          `gorm:"column:comment_count;not null;default:0"`
+	ReactionCount  int64          `gorm:"column:reaction_count;not null;default:0"`
+	ShareCount     int64          `gorm:"column:share_count;not null;default:0"`
+	LastActivityAt time.Time      `gorm:"column:last_activity_at;not null;index:idx_community_posts_tenant_created,priority:2;index:idx_community_posts_topic_created,priority:2"`
+	CreatedAt      time.Time      `gorm:"column:created_at;not null;index:idx_community_posts_author_created,priority:2"`
+	UpdatedAt      time.Time      `gorm:"column:updated_at;not null"`
+	DeletedAt      gorm.DeletedAt `gorm:"column:deleted_at;index"`
+}
+
+func (CommunityPost) TableName() string { return "community_posts" }
+
+type CommunityMedia struct {
+	ID           string        `gorm:"column:id;type:varchar(24);primaryKey"`
+	PostID       string        `gorm:"column:post_id;type:varchar(24);not null;index:idx_community_media_post_order,priority:1"`
+	Post         CommunityPost `gorm:"foreignKey:PostID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE"`
+	MediaType    string        `gorm:"column:media_type;type:varchar(16);not null;index"`
+	URL          string        `gorm:"column:url;type:text;not null"`
+	StorageKey   string        `gorm:"column:storage_key;type:text"`
+	ThumbnailURL string        `gorm:"column:thumbnail_url;type:text"`
+	OriginalName string        `gorm:"column:original_name;type:varchar(500)"`
+	MimeType     string        `gorm:"column:mime_type;type:varchar(160)"`
+	SizeBytes    int64         `gorm:"column:size_bytes;not null;default:0"`
+	Width        int           `gorm:"column:width;not null;default:0"`
+	Height       int           `gorm:"column:height;not null;default:0"`
+	DurationSec  int           `gorm:"column:duration_sec;not null;default:0"`
+	SortOrder    int           `gorm:"column:sort_order;not null;default:0;index:idx_community_media_post_order,priority:2"`
+	CreatedAt    time.Time     `gorm:"column:created_at;not null"`
+}
+
+func (CommunityMedia) TableName() string { return "community_media" }
+
+type CommunityComment struct {
+	ID            string         `gorm:"column:id;type:varchar(24);primaryKey"`
+	TenantID      string         `gorm:"column:tenant_id;type:varchar(64);not null;index"`
+	PostID        string         `gorm:"column:post_id;type:varchar(24);not null;index:idx_community_comments_post_created,priority:1"`
+	Post          CommunityPost  `gorm:"foreignKey:PostID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE"`
+	ParentID      string         `gorm:"column:parent_id;type:varchar(24);index"`
+	RootID        string         `gorm:"column:root_id;type:varchar(24);index"`
+	AuthorID      string         `gorm:"column:author_id;type:varchar(24);not null;index"`
+	Author        AuthUser       `gorm:"foreignKey:AuthorID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:RESTRICT"`
+	Content       string         `gorm:"column:content;type:text;not null"`
+	Depth         int            `gorm:"column:depth;not null;default:0;index"`
+	ReplyCount    int64          `gorm:"column:reply_count;not null;default:0"`
+	ReactionCount int64          `gorm:"column:reaction_count;not null;default:0"`
+	CreatedAt     time.Time      `gorm:"column:created_at;not null;index:idx_community_comments_post_created,priority:2"`
+	UpdatedAt     time.Time      `gorm:"column:updated_at;not null"`
+	DeletedAt     gorm.DeletedAt `gorm:"column:deleted_at;index"`
+}
+
+func (CommunityComment) TableName() string { return "community_comments" }
+
+type CommunityReaction struct {
+	ID         string    `gorm:"column:id;type:varchar(24);primaryKey"`
+	TenantID   string    `gorm:"column:tenant_id;type:varchar(64);not null;uniqueIndex:idx_community_reactions_unique,priority:1;index"`
+	TargetType string    `gorm:"column:target_type;type:varchar(16);not null;uniqueIndex:idx_community_reactions_unique,priority:2;index:idx_community_reactions_target,priority:1"`
+	TargetID   string    `gorm:"column:target_id;type:varchar(24);not null;uniqueIndex:idx_community_reactions_unique,priority:3;index:idx_community_reactions_target,priority:2"`
+	UserID     string    `gorm:"column:user_id;type:varchar(24);not null;uniqueIndex:idx_community_reactions_unique,priority:4;index"`
+	User       AuthUser  `gorm:"foreignKey:UserID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE"`
+	Reaction   string    `gorm:"column:reaction;type:varchar(16);not null;index"`
+	CreatedAt  time.Time `gorm:"column:created_at;not null"`
+	UpdatedAt  time.Time `gorm:"column:updated_at;not null"`
+}
+
+func (CommunityReaction) TableName() string { return "community_reactions" }
+
+type CommunityFollow struct {
+	ID         string    `gorm:"column:id;type:varchar(24);primaryKey"`
+	TenantID   string    `gorm:"column:tenant_id;type:varchar(64);not null;uniqueIndex:idx_community_follows_unique,priority:1;index"`
+	TargetType string    `gorm:"column:target_type;type:varchar(16);not null;uniqueIndex:idx_community_follows_unique,priority:2;index"`
+	TargetID   string    `gorm:"column:target_id;type:varchar(24);not null;uniqueIndex:idx_community_follows_unique,priority:3;index"`
+	UserID     string    `gorm:"column:user_id;type:varchar(24);not null;uniqueIndex:idx_community_follows_unique,priority:4;index"`
+	User       AuthUser  `gorm:"foreignKey:UserID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE"`
+	CreatedAt  time.Time `gorm:"column:created_at;not null"`
+}
+
+func (CommunityFollow) TableName() string { return "community_follows" }

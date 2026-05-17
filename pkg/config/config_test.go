@@ -139,6 +139,8 @@ auth:
   jwt_refresh_secret: "refresh-0123456789abcdefghijklmnopqrstuvwxyz"
 database:
   password: "prod-db-password"
+ai:
+  api_key_encryption_secret: "prod-ai-key-encryption-secret-012345"
 `)
 	t.Setenv("APP_PROFILE", "production")
 
@@ -365,6 +367,9 @@ R2_SECRET_ACCESS_KEY=secret-key
 R2_BUCKET_NAME=erg
 R2_PUBLIC_DOMAIN=https://media.erg.edu.vn
 R2_REGION=auto
+GROQ_API_KEY=groq-secret
+GROQ_MODEL=openai/gpt-oss-120b
+GROQ_BASE_URL=https://api.groq.com/openai/v1
 GEMINI_MODEL=gemini-3-flash-preview
 `), 0644); err != nil {
 		t.Fatalf("write temp .env: %v", err)
@@ -402,6 +407,15 @@ GEMINI_MODEL=gemini-3-flash-preview
 	}
 	if cfg.Ai.GeminiModel != "gemini-3-flash-preview" {
 		t.Errorf("expected gemini model alias, got %q", cfg.Ai.GeminiModel)
+	}
+	if cfg.Ai.GroqAPIKey != "groq-secret" {
+		t.Errorf("expected groq API key alias, got %q", cfg.Ai.GroqAPIKey)
+	}
+	if cfg.Ai.GroqModel != "openai/gpt-oss-120b" {
+		t.Errorf("expected groq model alias, got %q", cfg.Ai.GroqModel)
+	}
+	if cfg.Ai.GroqBaseURL != "https://api.groq.com/openai/v1" {
+		t.Errorf("expected groq base url alias, got %q", cfg.Ai.GroqBaseURL)
 	}
 }
 

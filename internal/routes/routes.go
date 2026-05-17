@@ -19,10 +19,13 @@ import (
 	audit "erg.ninja/internal/modules/audit"
 	authmodule "erg.ninja/internal/modules/auth"
 	"erg.ninja/internal/modules/bot"
+	"erg.ninja/internal/modules/centers"
+	"erg.ninja/internal/modules/community"
 	"erg.ninja/internal/modules/courses"
 	"erg.ninja/internal/modules/crawler"
 	"erg.ninja/internal/modules/documents"
 	"erg.ninja/internal/modules/elearning"
+	"erg.ninja/internal/modules/hoclieu"
 	"erg.ninja/internal/modules/lms"
 	"erg.ninja/internal/modules/menus"
 	"erg.ninja/internal/modules/notifications"
@@ -147,9 +150,13 @@ func RegisterHealthRoutes(r *gin.Engine, deps *Deps) {
 		defer cancel()
 
 		checks := gin.H{
-			"app":   true,
-			"db":    deps.Mongo.Ping(ctx) == nil,
-			"redis": deps.Redis.Ping(ctx) == nil,
+			"app": true,
+			"db":  deps.Mongo.Ping(ctx) == nil,
+		}
+		if deps.Redis != nil {
+			checks["redis"] = deps.Redis.Ping(ctx) == nil
+		} else {
+			checks["redis"] = false
 		}
 
 		status := "ready"
@@ -232,6 +239,12 @@ func legacyRegister(r *gin.Engine, deps *Deps) []func(context.Context) {
 	opsModule.Setup()
 	r.Use(middleware.FirewallMiddleware(opsModule.Service()))
 
+	centersModule := centers.NewModule(centers.Deps{
+		GORMClient: deps.GORMClient,
+		Log:        deps.Log,
+	})
+	centersModule.RegisterRoutes(r)
+
 	accessControlModule.RegisterRoutes(r)
 	stops = append(stops, func(ctx context.Context) {
 		if err := accessControlModule.Stop(ctx); err != nil {
@@ -248,6 +261,7 @@ func legacyRegister(r *gin.Engine, deps *Deps) []func(context.Context) {
 		JWTValidator:      deps.JWTValidator,
 		TenantMongoClient: deps.TenantMongoClient,
 		AC:                accessControlModule.Service(),
+		R2:                deps.R2,
 	})
 	_ = authMod.Setup()
 	authMod.RegisterRoutes(r)
@@ -277,7 +291,9 @@ func legacyRegister(r *gin.Engine, deps *Deps) []func(context.Context) {
 		Redis:             deps.Redis,
 		Log:               deps.Log,
 		Cfg:               deps.Cfg,
+		JWTValidator:      deps.JWTValidator,
 		TenantMongoClient: deps.TenantMongoClient,
+		R2:                deps.R2,
 	})
 	aiModule.Setup()
 	aiModule.RegisterRoutes(r)
@@ -455,6 +471,36 @@ func legacyRegister(r *gin.Engine, deps *Deps) []func(context.Context) {
 		}
 	})
 
+	hoclieuModule := hoclieu.NewModule(hoclieu.Deps{
+		Log:          deps.Log,
+		Cfg:          deps.Cfg,
+		JWTValidator: deps.JWTValidator,
+		R2:           deps.R2,
+		Mongo:        deps.Mongo,
+	})
+	hoclieuModule.Setup()
+	hoclieuModule.RegisterRoutes(r)
+	stops = append(stops, func(ctx context.Context) {
+		if err := hoclieuModule.Stop(ctx); err != nil {
+			deps.Log.WarnContext(ctx).Err(err).Msg("routes: hoclieu module stop failed")
+		}
+	})
+
+	communityModule := community.NewModule(community.Deps{
+		Log:          deps.Log,
+		Cfg:          deps.Cfg,
+		JWTValidator: deps.JWTValidator,
+		GORMClient:   deps.GORMClient,
+		R2:           deps.R2,
+	})
+	communityModule.Setup()
+	communityModule.RegisterRoutes(r)
+	stops = append(stops, func(ctx context.Context) {
+		if err := communityModule.Stop(ctx); err != nil {
+			deps.Log.WarnContext(ctx).Err(err).Msg("routes: community module stop failed")
+		}
+	})
+
 	elearningModule := elearning.NewModule(elearning.Deps{
 		Mongo:             deps.Mongo,
 		Redis:             deps.Redis,
@@ -473,6 +519,8 @@ func legacyRegister(r *gin.Engine, deps *Deps) []func(context.Context) {
 
 	lmsModule := lms.NewModule(lms.Deps{
 		Mongo:        deps.Mongo,
+		GORMClient:   deps.GORMClient,
+		Redis:        deps.Redis,
 		Log:          deps.Log,
 		Cfg:          deps.Cfg,
 		JWTValidator: deps.JWTValidator,

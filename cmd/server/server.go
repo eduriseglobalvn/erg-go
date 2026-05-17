@@ -23,15 +23,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/fx"
+	"go.uber.org/fx/fxevent"
 
 	_ "erg.ninja/pkg/plugin" // side-effect: registers build-tag modules
 
@@ -59,6 +62,9 @@ import (
 // graceful startup/shutdown.
 func Run() error {
 	fx.New(
+		fx.WithLogger(func() fxevent.Logger {
+			return fxevent.NopLogger
+		}),
 		fx.Provide(provideConfig),
 		fx.Provide(provideLogger),
 		fx.Provide(provideMongo),
@@ -86,7 +92,7 @@ func Run() error {
 func registerModules(log *logger.Logger, cfg *config.Config) {
 	names := EnabledModules()
 	if len(names) == 0 {
-		log.Warn().Msg("server: no modules registered via build tags — falling back to legacy wiring")
+		log.Debug().Msg("server: no modules registered via build tags - using legacy wiring")
 		return
 	}
 	log.Info().Strs("modules", names).Msg("server: build-tag modules registered")
@@ -107,11 +113,16 @@ func provideConfig() (*config.Config, error) {
 }
 
 func provideLogger(cfg *config.Config) *logger.Logger {
-	return logger.New(
+	opts := []logger.Option{
 		logger.WithServiceName("erg-server"),
 		logger.WithLevel(cfg.Logging.Level),
 		logger.WithTimeFormat(cfg.Logging.TimeFormat),
-	)
+	}
+	switch strings.ToLower(strings.TrimSpace(cfg.Logging.Format)) {
+	case "console", "pretty", "spring":
+		opts = append(opts, logger.WithConsoleFormat())
+	}
+	return logger.New(opts...)
 }
 
 func provideMongo(cfg *config.Config, log *logger.Logger) (*database.MongoClient, error) {
@@ -147,25 +158,44 @@ func provideGORM(cfg *config.Config, log *logger.Logger) (*database.GORMPostgres
 func provideRedis(cfg *config.Config, log *logger.Logger) (*cache.RedisClient, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	return cache.NewRedisClient(ctx, cfg.Redis, cache.WithRedisLogger(log))
+	redis, err := cache.NewRedisClient(ctx, cfg.Redis, cache.WithRedisLogger(log))
+	if err != nil {
+		if isDevelopment(cfg) {
+			log.Warn().Err(err).Msg("redis: unavailable - continuing without Redis in development")
+			return nil, nil
+		}
+		return nil, err
+	}
+	return redis, nil
 }
 
 func provideAsynq(cfg *config.Config, log *logger.Logger) (*queue.AsynqClient, error) {
 	return queue.NewAsynqClient(cfg.Queue, queue.WithAsynqClientLogger(log))
 }
 
-func provideAsynqServer(cfg *config.Config, log *logger.Logger) (*queue.AsynqServer, error) {
+func provideAsynqServer(cfg *config.Config, log *logger.Logger, redis *cache.RedisClient) (*queue.AsynqServer, error) {
 	if !cfg.Queue.IsServer {
+		return nil, nil
+	}
+	if isDevelopment(cfg) && redis == nil {
+		log.Warn().Msg("queue: worker disabled in development because Redis is unavailable")
 		return nil, nil
 	}
 	return queue.NewAsynqServer(cfg.Queue, queue.WithAsynqServerLogger(log))
 }
 
-func provideEventBus(log *logger.Logger, redis *cache.RedisClient) *event.EventBus {
-	return event.NewEventBus("erg-server",
+func provideEventBus(cfg *config.Config, log *logger.Logger, redis *cache.RedisClient) *event.EventBus {
+	opts := []event.BusOption{
 		event.WithBusLogger(log),
-		event.WithRedisBackend(redis),
-	)
+		event.WithRedisSubscriptions(true),
+	}
+	if redis != nil {
+		opts = append(opts, event.WithRedisBackend(redis))
+		log.Info().Msg("event bus: redis pubsub enabled")
+	} else {
+		log.Warn().Msg("event bus: redis backend unavailable - using local event bus only")
+	}
+	return event.NewEventBus("erg-server", opts...)
 }
 
 func provideJWTValidator(cfg *config.Config, log *logger.Logger) (*auth.JWTValidator, error) {
@@ -296,6 +326,9 @@ func registerHTTPServer(
 	discoveryFactory *shared.Factory,
 	gormClient *database.GORMPostgresClient,
 ) {
+	if os.Getenv("GIN_MODE") == "" {
+		gin.SetMode(gin.ReleaseMode)
+	}
 	router := gin.New()
 	if err := router.SetTrustedProxies(cfg.HTTP.TrustedProxyCIDRs); err != nil {
 		log.Warn().Err(err).Strs("trusted_proxy_cidrs", cfg.HTTP.TrustedProxyCIDRs).Msg("server: invalid trusted proxy CIDR config ignored by gin")
@@ -313,6 +346,7 @@ func registerHTTPServer(
 		router.Use(middleware.RateLimit(redis, middleware.RateLimitConfig{
 			RequestsPerMinute: cfg.HTTP.RateLimit.RequestsPerMinute,
 			Burst:             cfg.HTTP.RateLimit.Burst,
+			SkipLoopback:      !strings.EqualFold(cfg.App.Env, "production"),
 		}))
 	}
 
@@ -393,7 +427,7 @@ func registerHTTPServer(
 			}
 		}
 	} else {
-		if err != nil && !errors.Is(err, compose.ErrNoDeployManifest) {
+		if err != nil && !errors.Is(err, compose.ErrNoDeployManifest) && !errors.Is(err, os.ErrNotExist) {
 			log.Warn().Err(err).Str("path", manifestPath).Msg("server: deploy manifest load failed, using legacy wiring")
 		} else {
 			log.Debug().Msg("server: compose disabled — using legacy routes.Register()")
@@ -416,9 +450,25 @@ func registerHTTPServer(
 	lc.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {
 			log.Info().Str("addr", addr).Msg("erg-server: HTTP server starting")
+			listener, err := net.Listen("tcp", addr)
+			if err != nil {
+				log.Error().Err(err).Str("addr", addr).Msg("erg-server: HTTP server bind failed")
+				return err
+			}
+
+			port := cfg.App.Port
+			if tcpAddr, ok := listener.Addr().(*net.TCPAddr); ok {
+				port = tcpAddr.Port
+			}
+			log.Info().
+				Str("addr", listener.Addr().String()).
+				Int("port", port).
+				Str("url", fmt.Sprintf("http://%s:%d", displayHost(cfg.App.Host), port)).
+				Msg("erg-server: HTTP server started")
+
 			go func() {
-				if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-					log.Error().Err(err).Msg("erg-server: ListenAndServe error")
+				if err := srv.Serve(listener); err != nil && err != http.ErrServerClosed {
+					log.Error().Err(err).Msg("erg-server: HTTP server serve error")
 				}
 			}()
 			return nil
@@ -436,13 +486,35 @@ func registerHTTPServer(
 			}
 			bus.UnsubscribeAll()
 			_ = mongo.Close(ctx)
-			_ = redis.Close()
-			_ = queueClient.Close()
+			if redis != nil {
+				_ = redis.Close()
+			}
+			if queueClient != nil {
+				_ = queueClient.Close()
+			}
 			_ = log.Sync()
 			log.Info().Msg("erg-server: stopped")
 			return nil
 		},
 	})
+}
+
+func displayHost(host string) string {
+	host = strings.TrimSpace(host)
+	switch host {
+	case "", "0.0.0.0", "::":
+		return "localhost"
+	default:
+		return host
+	}
+}
+
+func isDevelopment(cfg *config.Config) bool {
+	if cfg == nil {
+		return true
+	}
+	env := strings.TrimSpace(strings.ToLower(cfg.App.Env))
+	return env == "" || env == "development" || env == "dev" || env == "local"
 }
 
 func defaultTenantID(cfg *config.Config) string {
@@ -504,7 +576,9 @@ func onStart(
 	if err := mongo.Ping(ctx); err != nil {
 		log.Warn().Err(err).Msg("mongo: ping failed on startup")
 	}
-	_ = redis.Ping(ctx)
+	if redis != nil {
+		_ = redis.Ping(ctx)
+	}
 	log.Info().Msg("erg-server: startup checks complete")
 	return nil
 }
@@ -520,10 +594,14 @@ func onStop(
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	_ = asynq.Close()
+	if asynq != nil {
+		_ = asynq.Close()
+	}
 	bus.UnsubscribeAll()
 	_ = mongo.Close(ctx)
-	_ = redis.Close()
+	if redis != nil {
+		_ = redis.Close()
+	}
 	_ = log.Sync()
 	log.Info().Msg("erg-server: shutdown complete")
 	return nil

@@ -43,6 +43,7 @@ type Config struct {
 	R2        R2Config        `mapstructure:"r2"`
 	GDrive    GDriveConfig    `mapstructure:"gdrive"`
 	Analytics AnalyticsConfig `mapstructure:"analytics"`
+	Lifecycle LifecycleConfig `mapstructure:"lifecycle"`
 }
 
 // DiscoveryConfig holds service discovery settings. Maps to config.yaml "discovery:".
@@ -103,6 +104,15 @@ type R2Config struct {
 // AnalyticsConfig holds Firebase Analytics sync settings.
 type AnalyticsConfig struct {
 	FirebaseAPIKey string `mapstructure:"firebase_api_key"` // API key for Firebase → erg-go sync
+}
+
+// LifecycleConfig controls whether noncritical one-off work runs during default startup.
+type LifecycleConfig struct {
+	AuthBootstrapAdminOnStartup bool `mapstructure:"auth_bootstrap_admin_on_startup"`
+	ProfileBackfillOnStartup    bool `mapstructure:"profile_backfill_on_startup"`
+	OperationSeedOnStartup      bool `mapstructure:"operation_seed_on_startup"`
+	TrendingRefreshOnStartup    bool `mapstructure:"trending_refresh_on_startup"`
+	LMSSeedOnStartup            bool `mapstructure:"lms_seed_on_startup"`
 }
 
 // GDriveConfig holds Google Drive storage settings.
@@ -246,11 +256,30 @@ type TrendingConfig struct {
 
 // AiConfig holds AI service settings.
 type AiConfig struct {
-	GeminiAPIKey  string        `mapstructure:"gemini_api_key"`
-	GeminiModel   string        `mapstructure:"gemini_model"`
-	GeminiTimeout time.Duration `mapstructure:"gemini_timeout"`
-	CacheTTL      time.Duration `mapstructure:"cache_ttl"`
-	BatchSize     int           `mapstructure:"batch_size"`
+	Provider                       string        `mapstructure:"provider"`
+	APIKeyEncryptionSecret         string        `mapstructure:"api_key_encryption_secret"`
+	GeminiAPIKey                   string        `mapstructure:"gemini_api_key"`
+	GeminiModel                    string        `mapstructure:"gemini_model"`
+	GeminiTimeout                  time.Duration `mapstructure:"gemini_timeout"`
+	GroqAPIKey                     string        `mapstructure:"groq_api_key"`
+	GroqModel                      string        `mapstructure:"groq_model"`
+	GroqBaseURL                    string        `mapstructure:"groq_base_url"`
+	GroqTimeout                    time.Duration `mapstructure:"groq_timeout"`
+	GroqMaxCompletionTokens        int           `mapstructure:"groq_max_completion_tokens"`
+	GroqTemperature                float64       `mapstructure:"groq_temperature"`
+	GroqReasoningEffort            string        `mapstructure:"groq_reasoning_effort"`
+	HuggingFaceImageAPIKey         string        `mapstructure:"huggingface_image_api_key"`
+	HuggingFaceImageProvider       string        `mapstructure:"huggingface_image_provider"`
+	HuggingFaceImageModel          string        `mapstructure:"huggingface_image_model"`
+	HuggingFaceImageBaseURL        string        `mapstructure:"huggingface_image_base_url"`
+	HuggingFaceImageTimeout        time.Duration `mapstructure:"huggingface_image_timeout"`
+	HuggingFaceImageWidth          int           `mapstructure:"huggingface_image_width"`
+	HuggingFaceImageHeight         int           `mapstructure:"huggingface_image_height"`
+	HuggingFaceImageSteps          int           `mapstructure:"huggingface_image_steps"`
+	HuggingFaceImageGuidance       float64       `mapstructure:"huggingface_image_guidance"`
+	HuggingFaceImageNegativePrompt string        `mapstructure:"huggingface_image_negative_prompt"`
+	CacheTTL                       time.Duration `mapstructure:"cache_ttl"`
+	BatchSize                      int           `mapstructure:"batch_size"`
 }
 
 // AuthConfig holds authentication settings.
@@ -260,6 +289,8 @@ type AuthConfig struct {
 	JWTPublicKey       string        `mapstructure:"jwt_public_key"`
 	JWTIssuer          string        `mapstructure:"jwt_issuer"`
 	GoogleBridgeSecret string        `mapstructure:"google_bridge_secret"`
+	GoogleClientID     string        `mapstructure:"google_client_id"`
+	GoogleClientIDs    []string      `mapstructure:"google_client_ids"`
 	JWTAlgorithms      []string      `mapstructure:"jwt_algorithms"`
 	BearerPrefix       string        `mapstructure:"bearer_prefix"`
 	SkipPaths          []string      `mapstructure:"skip_paths"`
@@ -274,8 +305,19 @@ type AuthConfig struct {
 	BlockUnknownGeo    bool          `mapstructure:"block_unknown_geo"`
 	AllowedContinents  []string      `mapstructure:"allowed_continents"`
 	// BootstrapAdmin controls whether a default super-admin account is created on startup.
-	AdminEmail    string `mapstructure:"admin_email"`
-	AdminPassword string `mapstructure:"admin_password"`
+	AdminEmail    string           `mapstructure:"admin_email"`
+	AdminPassword string           `mapstructure:"admin_password"`
+	Cookie        AuthCookieConfig `mapstructure:"cookie"`
+}
+
+// AuthCookieConfig controls browser session cookies for direct API mode.
+type AuthCookieConfig struct {
+	Enabled          bool   `mapstructure:"enabled"`
+	Domain           string `mapstructure:"domain"`
+	Secure           bool   `mapstructure:"secure"`
+	SameSite         string `mapstructure:"same_site"`
+	AccessTokenName  string `mapstructure:"access_token_name"`
+	RefreshTokenName string `mapstructure:"refresh_token_name"`
 }
 
 // HTTPConfig holds HTTP server settings.
@@ -369,44 +411,55 @@ var (
 const secretPrefix = "SECRET_"
 
 var legacyEnvKeyAliases = map[string]string{ // #nosec G101 -- keys are environment variable names and config paths, not credential values.
-	"APP_ENV":                     "app.env",
-	"NODE_ENV":                    "app.env",
-	"DB_HOST":                     "database.host",
-	"DB_PORT":                     "database.port",
-	"DB_USER":                     "database.user",
-	"DB_PASSWORD":                 "database.password",
-	"DB_PASS":                     "database.password",
-	"DB_NAME":                     "database.name",
-	"JWT_SECRET":                  "auth.jwt_secret",
-	"JWT_ACCESS_SECRET":           "auth.jwt_secret",
-	"JWT_PUBLIC_KEY":              "auth.jwt_public_key",
-	"JWT_ACCESS_EXPIRATION_TIME":  "auth.access_token_ttl",
-	"JWT_REFRESH_EXPIRATION_TIME": "auth.refresh_token_ttl",
-	"MONGO_URI":                   "mongodb.uri",
-	"MONGO_URL":                   "mongodb.uri",
-	"MONGO_DB":                    "mongodb.database",
-	"MONGO_DB_NAME":               "mongodb.database",
-	"REDIS_HOST":                  "redis.host",
-	"REDIS_PORT":                  "redis.port",
-	"REDIS_PASS":                  "redis.password",
-	"REDIS_PASSWORD":              "redis.password",
-	"MAIL_HOST":                   "smtp.host",
-	"MAIL_PORT":                   "smtp.port",
-	"MAIL_SECURE":                 "smtp.tls",
-	"MAIL_USER":                   "smtp.username",
-	"MAIL_PASSWORD":               "smtp.password",
-	"MAIL_FROM":                   "smtp.from",
-	"R2_ENDPOINT":                 "r2.endpoint",
-	"R2_ACCESS_KEY_ID":            "r2.access_key_id",
-	"R2_SECRET_ACCESS_KEY":        "r2.secret_key",
-	"R2_BUCKET_NAME":              "r2.bucket_name",
-	"R2_PUBLIC_DOMAIN":            "r2.public_domain",
-	"R2_REGION":                   "r2.region",
-	"R2__BUCKET":                  "r2.bucket_name",
-	"R2__SECRET_ACCESS_KEY":       "r2.secret_key",
-	"GEMINI_MODEL":                "ai.gemini_model",
-	"GDRIVE_CREDENTIAL_JSON":      "gdrive.credential_json",
-	"GDRIVE_FOLDER_ID":            "gdrive.folder_id",
+	"APP_ENV":                      "app.env",
+	"NODE_ENV":                     "app.env",
+	"DB_HOST":                      "database.host",
+	"DB_PORT":                      "database.port",
+	"DB_USER":                      "database.user",
+	"DB_PASSWORD":                  "database.password",
+	"DB_PASS":                      "database.password",
+	"DB_NAME":                      "database.name",
+	"JWT_SECRET":                   "auth.jwt_secret",
+	"JWT_ACCESS_SECRET":            "auth.jwt_secret",
+	"JWT_PUBLIC_KEY":               "auth.jwt_public_key",
+	"JWT_ACCESS_EXPIRATION_TIME":   "auth.access_token_ttl",
+	"JWT_REFRESH_EXPIRATION_TIME":  "auth.refresh_token_ttl",
+	"GOOGLE_CLIENT_ID":             "auth.google_client_id",
+	"GOOGLE_OAUTH_CLIENT_ID":       "auth.google_client_id",
+	"MONGO_URI":                    "mongodb.uri",
+	"MONGO_URL":                    "mongodb.uri",
+	"MONGO_DB":                     "mongodb.database",
+	"MONGO_DB_NAME":                "mongodb.database",
+	"REDIS_HOST":                   "redis.host",
+	"REDIS_PORT":                   "redis.port",
+	"REDIS_PASS":                   "redis.password",
+	"REDIS_PASSWORD":               "redis.password",
+	"MAIL_HOST":                    "smtp.host",
+	"MAIL_PORT":                    "smtp.port",
+	"MAIL_SECURE":                  "smtp.tls",
+	"MAIL_USER":                    "smtp.username",
+	"MAIL_PASSWORD":                "smtp.password",
+	"MAIL_FROM":                    "smtp.from",
+	"R2_ENDPOINT":                  "r2.endpoint",
+	"R2_ACCESS_KEY_ID":             "r2.access_key_id",
+	"R2_SECRET_ACCESS_KEY":         "r2.secret_key",
+	"R2_BUCKET_NAME":               "r2.bucket_name",
+	"R2_PUBLIC_DOMAIN":             "r2.public_domain",
+	"R2_REGION":                    "r2.region",
+	"R2__BUCKET":                   "r2.bucket_name",
+	"R2__SECRET_ACCESS_KEY":        "r2.secret_key",
+	"AI_API_KEY_ENCRYPTION_SECRET": "ai.api_key_encryption_secret",
+	"GROQ_API_KEY":                 "ai.groq_api_key",
+	"GROQ_MODEL":                   "ai.groq_model",
+	"GROQ_BASE_URL":                "ai.groq_base_url",
+	"GEMINI_MODEL":                 "ai.gemini_model",
+	"HF_TOKEN":                     "ai.huggingface_image_api_key",
+	"HUGGINGFACE_TOKEN":            "ai.huggingface_image_api_key",
+	"HUGGINGFACE_API_KEY":          "ai.huggingface_image_api_key",
+	"HUGGINGFACE_IMAGE_PROVIDER":   "ai.huggingface_image_provider",
+	"HUGGINGFACE_IMAGE_MODEL":      "ai.huggingface_image_model",
+	"GDRIVE_CREDENTIAL_JSON":       "gdrive.credential_json",
+	"GDRIVE_FOLDER_ID":             "gdrive.folder_id",
 }
 
 // Loader encapsulates Viper configuration options.
@@ -838,6 +891,9 @@ func validateConfig(cfg *Config) error {
 				return err
 			}
 		}
+		if cfg.Auth.Cookie.Enabled && !cfg.Auth.Cookie.Secure {
+			return fmt.Errorf("config: auth.cookie.secure must be true in production")
+		}
 		if err := validateProductionSecret("database.password", cfg.Database.Password, 8); err != nil {
 			return err
 		}
@@ -863,6 +919,9 @@ func validateConfig(cfg *Config) error {
 			if err := validateProductionSecret("r2.secret_key", cfg.R2.SecretKey, 16); err != nil {
 				return err
 			}
+		}
+		if err := validateProductionSecret("ai.api_key_encryption_secret", cfg.Ai.APIKeyEncryptionSecret, 32); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -1042,10 +1101,26 @@ func NewDefault() *Config {
 			MinHotScore: 75,
 		},
 		Ai: AiConfig{
-			GeminiModel:   "gemini-2.0-flash",
-			GeminiTimeout: 10 * time.Second,
-			CacheTTL:      24 * time.Hour,
-			BatchSize:     10,
+			Provider:                       "gemini",
+			GeminiModel:                    "gemini-2.0-flash",
+			GeminiTimeout:                  10 * time.Second,
+			GroqModel:                      "openai/gpt-oss-120b",
+			GroqBaseURL:                    "https://api.groq.com/openai/v1",
+			GroqTimeout:                    30 * time.Second,
+			GroqMaxCompletionTokens:        4096,
+			GroqTemperature:                1,
+			GroqReasoningEffort:            "medium",
+			HuggingFaceImageProvider:       "fal-ai",
+			HuggingFaceImageModel:          "black-forest-labs/FLUX.1-Krea-dev",
+			HuggingFaceImageBaseURL:        "https://router.huggingface.co",
+			HuggingFaceImageTimeout:        90 * time.Second,
+			HuggingFaceImageWidth:          1024,
+			HuggingFaceImageHeight:         576,
+			HuggingFaceImageSteps:          28,
+			HuggingFaceImageGuidance:       7,
+			HuggingFaceImageNegativePrompt: "text, watermark, logo, blurry, distorted, low quality, extra fingers",
+			CacheTTL:                       24 * time.Hour,
+			BatchSize:                      10,
 		},
 		Auth: AuthConfig{
 			JWTAlgorithms:     []string{"HS256"},
@@ -1053,14 +1128,21 @@ func NewDefault() *Config {
 			SkipPaths:         []string{"/healthz", "/ready", "/metrics"},
 			AccessTokenTTL:    15 * time.Minute,
 			RefreshTokenTTL:   7 * 24 * time.Hour,
-			Argon2Memory:      65536,
-			Argon2Iterations:  3,
+			Argon2Memory:      32768,
+			Argon2Iterations:  2,
 			MaxFailedLogin:    5,
 			FailedLoginWindow: 15 * time.Minute,
 			BlockDuration:     15 * time.Minute,
 			GeoBlockEnabled:   true,
 			BlockUnknownGeo:   false,
 			AllowedContinents: []string{"AS"},
+			Cookie: AuthCookieConfig{
+				Enabled:          true,
+				Secure:           false,
+				SameSite:         "lax",
+				AccessTokenName:  "erg_access_token",
+				RefreshTokenName: "erg_refresh_token",
+			},
 		},
 		HTTP: HTTPConfig{
 			Host:              "0.0.0.0",
@@ -1078,7 +1160,7 @@ func NewDefault() *Config {
 			CORS: CORSConfig{
 				AllowedOrigins:   []string{"*"},
 				AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"},
-				AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-Request-ID"},
+				AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-Request-ID", "X-CSRF-Token"},
 				AllowCredentials: false,
 				MaxAge:           86400,
 			},
@@ -1116,5 +1198,6 @@ func NewDefault() *Config {
 		R2: R2Config{
 			Region: "auto",
 		},
+		Lifecycle: LifecycleConfig{},
 	}
 }

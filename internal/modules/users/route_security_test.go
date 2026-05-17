@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	usercontroller "erg.ninja/internal/modules/users/api/controller"
 	"erg.ninja/pkg/auth"
 	"github.com/gin-gonic/gin"
 )
@@ -26,7 +27,7 @@ func TestUsersAdminRoutesRequireAdminRole(t *testing.T) {
 	}
 
 	router := gin.New()
-	newController(nil, validator, nil).registerRoutes(router)
+	usercontroller.New(nil, validator, nil).RegisterRoutes(router)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/users/507f1f77bcf86cd799439012", nil)
 	req.Header.Set("Authorization", "Bearer "+token)

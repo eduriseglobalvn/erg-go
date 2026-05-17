@@ -1,6 +1,9 @@
 package ai
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -26,6 +29,9 @@ func TestNewClient(t *testing.T) {
 	if c.model != "gemini-2.0-flash" {
 		t.Errorf("model = %q, want 'gemini-2.0-flash'", c.model)
 	}
+	if c.Provider() != "gemini" {
+		t.Errorf("provider = %q, want gemini", c.Provider())
+	}
 }
 
 func TestNewClientDefaultModel(t *testing.T) {
@@ -36,6 +42,62 @@ func TestNewClientDefaultModel(t *testing.T) {
 	}
 	if c.model != "gemini-2.0-flash" {
 		t.Errorf("default model = %q, want 'gemini-2.0-flash'", c.model)
+	}
+}
+
+func TestNewClientGroqDefaults(t *testing.T) {
+	cfg := config.AiConfig{
+		Provider:   "groq",
+		GroqAPIKey: "test-key",
+	}
+	c, err := NewClient(cfg)
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	if c.Provider() != "groq" {
+		t.Errorf("provider = %q, want groq", c.Provider())
+	}
+	if c.Model() != "openai/gpt-oss-120b" {
+		t.Errorf("model = %q, want openai/gpt-oss-120b", c.Model())
+	}
+	if !c.IsConfigured() {
+		t.Fatal("expected groq client to be configured")
+	}
+}
+
+func TestGenerateTextGroq(t *testing.T) {
+	var gotAuth string
+	var gotPath string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		gotPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"Generated content"}}]}`))
+	}))
+	defer server.Close()
+
+	c, err := NewClient(config.AiConfig{
+		Provider:    "groq",
+		GroqAPIKey:  "test-key",
+		GroqBaseURL: server.URL,
+		GroqModel:   "openai/gpt-oss-120b",
+	})
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+
+	got, err := c.GenerateText(context.Background(), "write something")
+	if err != nil {
+		t.Fatalf("GenerateText: %v", err)
+	}
+	if got != "Generated content" {
+		t.Fatalf("GenerateText = %q", got)
+	}
+	if gotPath != "/chat/completions" {
+		t.Fatalf("path = %q, want /chat/completions", gotPath)
+	}
+	if gotAuth != "Bearer test-key" {
+		t.Fatalf("Authorization header = %q", gotAuth)
 	}
 }
 

@@ -6,6 +6,9 @@ import (
 	"context"
 	"fmt"
 	"image"
+	"image/color"
+	"image/draw"
+	"image/jpeg"
 	"io"
 	"net/http"
 	"net/url"
@@ -19,6 +22,9 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/disintegration/imaging"
 	"github.com/google/uuid"
+
+	_ "image/gif"
+	_ "image/png"
 )
 
 // R2Config holds all R2 / S3-compatible storage configuration.
@@ -50,6 +56,8 @@ const (
 	MaxImageSize = 5 << 20  // 5 MB
 	MaxDocSize   = 10 << 20 // 10 MB
 )
+
+const avatarSize = 512
 
 // R2Client wraps an AWS S3 client pointed at a Cloudflare R2 bucket.
 type R2Client struct {
@@ -121,7 +129,7 @@ func NewR2Client(ctx context.Context, cfg R2Config, opts ...R2Option) (*R2Client
 // Returns the public URL of the uploaded file on success.
 func (r *R2Client) UploadImage(ctx context.Context, buf []byte, folder string) (string, error) {
 	key := fmt.Sprintf("images/%s/%s.webp",
-		strings.TrimSuffix(folder, "/"),
+		SafeFolder(folder),
 		newObjectID(),
 	)
 
@@ -185,8 +193,12 @@ func (r *R2Client) ProcessAndUpload(ctx context.Context, buf []byte, folder, fil
 		return "", fmt.Errorf("storage: ProcessAndUpload: encode png: %w", err)
 	}
 
-	id := newObjectID()
-	key := fmt.Sprintf("images/%s/%s.png", strings.TrimSuffix(folder, "/"), id)
+	_, err = ValidateUpload(buf, filename, mime, UploadKindImage, MaxImageSize)
+	if err != nil {
+		return "", fmt.Errorf("storage: ProcessAndUpload: %w", err)
+	}
+
+	key := fmt.Sprintf("images/%s/%s.png", SafeFolder(folder), newObjectID())
 
 	input := &s3.PutObjectInput{
 		Bucket:      aws.String(r.bucket),
@@ -204,31 +216,72 @@ func (r *R2Client) ProcessAndUpload(ctx context.Context, buf []byte, folder, fil
 	return url, nil
 }
 
-// UploadRawFile uploads an unmodified file (PDF or Word) to R2 under raw/{folder}/{filename}.
+// UploadAvatar uploads a normalized avatar image under avatar/{userID}/{id}.jpg.
+// Avatars are center-cropped to a square and encoded as high-quality JPEG to keep
+// the file small while preserving enough detail for LMS profile UI.
+func (r *R2Client) UploadAvatar(ctx context.Context, buf []byte, userID, filename string) (string, error) {
+	if r == nil {
+		return "", fmt.Errorf("r2: avatar upload: storage is not configured")
+	}
+	if strings.TrimSpace(userID) == "" {
+		return "", fmt.Errorf("r2: avatar upload: empty user id")
+	}
+	if _, err := ValidateUpload(buf, filename, "", UploadKindImage, MaxImageSize); err != nil {
+		return "", fmt.Errorf("r2: avatar upload: %w", err)
+	}
+
+	img, _, err := image.Decode(bytes.NewReader(buf))
+	if err != nil {
+		return "", fmt.Errorf("r2: avatar upload: decode image: %w", err)
+	}
+
+	cropped := imaging.Fill(img, avatarSize, avatarSize, imaging.Center, imaging.Lanczos)
+	flattened := image.NewRGBA(cropped.Bounds())
+	draw.Draw(flattened, flattened.Bounds(), &image.Uniform{C: color.White}, image.Point{}, draw.Src)
+	draw.Draw(flattened, flattened.Bounds(), cropped, cropped.Bounds().Min, draw.Over)
+
+	var encBuf bytes.Buffer
+	if err := jpeg.Encode(&encBuf, flattened, &jpeg.Options{Quality: 84}); err != nil {
+		return "", fmt.Errorf("r2: avatar upload: encode jpeg: %w", err)
+	}
+
+	key := fmt.Sprintf("avatar/%s/%s.jpg", SafeFolder(userID), newObjectID())
+	input := &s3.PutObjectInput{
+		Bucket:       aws.String(r.bucket),
+		Key:          aws.String(key),
+		Body:         bytes.NewReader(encBuf.Bytes()),
+		ContentType:  aws.String("image/jpeg"),
+		CacheControl: aws.String("public, max-age=31536000, immutable"),
+	}
+	if _, err := r.client.PutObject(ctx, input); err != nil {
+		return "", fmt.Errorf("r2: avatar upload: put object: %w", err)
+	}
+
+	url := r.publicURL(key)
+	r.log.Debug().Str("key", key).Str("url", url).Int("orig_bytes", len(buf)).Int("stored_bytes", encBuf.Len()).Msg("r2: avatar uploaded")
+	return url, nil
+}
+
+// UploadRawFile uploads an unmodified file (PDF or Word) to R2 under raw/{folder}/{server-generated-name}.
 // It validates MIME type and enforces MaxDocSize (10 MB).
 //
 // Returns the public URL of the stored file.
 func (r *R2Client) UploadRawFile(ctx context.Context, buf []byte, folder, filename, mime string) (string, error) {
-	if len(buf) == 0 {
-		return "", fmt.Errorf("storage: UploadRawFile: empty buffer")
-	}
-	if _, ok := allowedDocMIMEs[mime]; !ok {
-		return "", fmt.Errorf("storage: UploadRawFile: unsupported document MIME %q", mime)
-	}
-	if int64(len(buf)) > MaxDocSize {
-		return "", fmt.Errorf("storage: UploadRawFile: document exceeds %d MB limit (got %d bytes)", MaxDocSize>>20, len(buf))
+	validated, err := ValidateUpload(buf, filename, mime, UploadKindDocument, MaxDocSize)
+	if err != nil {
+		return "", fmt.Errorf("storage: UploadRawFile: %w", err)
 	}
 
-	key := fmt.Sprintf("raw/%s/%s", strings.TrimSuffix(folder, "/"), filename)
+	key := fmt.Sprintf("raw/%s/%s", SafeFolder(folder), validated.ObjectFilename)
 
 	input := &s3.PutObjectInput{
 		Bucket:        aws.String(r.bucket),
 		Key:           aws.String(key),
 		Body:          bytes.NewReader(buf),
-		ContentType:   aws.String(mime),
+		ContentType:   aws.String(validated.ContentType),
 		ContentLength: aws.Int64(int64(len(buf))),
 		Metadata: map[string]string{
-			"original-filename": filename,
+			"original-filename": validated.OriginalFilename,
 		},
 	}
 
@@ -246,31 +299,89 @@ func (r *R2Client) DeleteFile(ctx context.Context, fileURL string) error {
 	return r.Delete(ctx, fileURL)
 }
 
-// UploadRaw uploads an unmodified file to R2 with the given content type.
+// UploadRaw uploads an unmodified image/document to R2 with centralized validation.
 //
-// The object key is "raw/{folder}/{filename}" and the original filename is
-// preserved as metadata on the object.
+// The object key is "raw/{folder}/{server-generated-name}" and the sanitized
+// original filename is preserved as metadata on the object.
 func (r *R2Client) UploadRaw(ctx context.Context, buf []byte, folder, filename, mime string) (string, error) {
-	key := fmt.Sprintf("raw/%s/%s", strings.TrimSuffix(folder, "/"), filename)
+	kind := UploadKindDocument
+	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(mime)), "image/") {
+		kind = UploadKindImage
+	}
+	maxSize := int64(MaxDocSize)
+	if kind == UploadKindImage {
+		maxSize = MaxImageSize
+	}
+	validated, err := ValidateUpload(buf, filename, mime, kind, maxSize)
+	if err != nil {
+		return "", fmt.Errorf("r2: upload raw: %w", err)
+	}
+	key := fmt.Sprintf("raw/%s/%s", SafeFolder(folder), validated.ObjectFilename)
 
 	input := &s3.PutObjectInput{
 		Bucket:        aws.String(r.bucket),
 		Key:           aws.String(key),
 		Body:          bytes.NewReader(buf),
-		ContentType:   aws.String(mime),
+		ContentType:   aws.String(validated.ContentType),
 		ContentLength: aws.Int64(int64(len(buf))),
 		Metadata: map[string]string{
-			"original-filename": filename,
+			"original-filename": validated.OriginalFilename,
 		},
 	}
 
-	_, err := r.client.PutObject(ctx, input)
+	_, err = r.client.PutObject(ctx, input)
 	if err != nil {
 		return "", fmt.Errorf("r2: upload raw: %w", err)
 	}
 
 	url := r.publicURL(key)
 	r.log.Debug().Str("key", key).Str("url", url).Msg("r2: raw file uploaded")
+	return url, nil
+}
+
+// UploadLearningAsset uploads a validated learning material to R2.
+//
+// Hoclieu validates the selected file type, extension and MIME before calling
+// this method because the allowed matrix is wider than generic documents
+// (PPTX, ZIP, video, audio, HTML5 packages, spreadsheets, and images).
+func (r *R2Client) UploadLearningAsset(ctx context.Context, buf []byte, folder, filename, mime string) (string, error) {
+	if r == nil {
+		return "", fmt.Errorf("r2: learning asset upload: storage is not configured")
+	}
+	if len(buf) == 0 {
+		return "", fmt.Errorf("r2: learning asset upload: empty file")
+	}
+	if int64(len(buf)) > 250<<20 {
+		return "", fmt.Errorf("r2: learning asset upload: file exceeds %d bytes", 250<<20)
+	}
+
+	safeName := SanitizeFilename(filename)
+	if safeName == "" {
+		safeName = "learning-asset.bin"
+	}
+	contentType := strings.ToLower(strings.TrimSpace(strings.Split(mime, ";")[0]))
+	if contentType == "" {
+		contentType = http.DetectContentType(buf)
+	}
+
+	key := fmt.Sprintf("hoclieu/%s/%s-%s", SafeFolder(folder), newObjectID(), safeName)
+	input := &s3.PutObjectInput{
+		Bucket:        aws.String(r.bucket),
+		Key:           aws.String(key),
+		Body:          bytes.NewReader(buf),
+		ContentType:   aws.String(contentType),
+		ContentLength: aws.Int64(int64(len(buf))),
+		Metadata: map[string]string{
+			"original-filename": safeName,
+			"source":            "hoclieu",
+		},
+	}
+	if _, err := r.client.PutObject(ctx, input); err != nil {
+		return "", fmt.Errorf("r2: learning asset upload: put object: %w", err)
+	}
+
+	url := r.publicURL(key)
+	r.log.Debug().Str("key", key).Str("url", url).Int("bytes", len(buf)).Msg("r2: hoclieu learning asset uploaded")
 	return url, nil
 }
 

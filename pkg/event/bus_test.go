@@ -3,8 +3,11 @@ package event
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
+
+	"erg.ninja/pkg/cache"
 )
 
 func TestEventEnvelope(t *testing.T) {
@@ -163,5 +166,34 @@ func TestEventBusSubscribeWithoutRedis(t *testing.T) {
 	})
 	if err == nil {
 		t.Error("Subscribe should fail without Redis backend")
+	}
+}
+
+func TestEventBusSubscribeManyWithoutRedis(t *testing.T) {
+	bus := NewEventBus("test-service")
+	_, err := bus.SubscribeMany(context.Background(), map[string]EventHandler{
+		"some.event": func(ctx context.Context, envelope EventEnvelope) error { return nil },
+	})
+	if err == nil {
+		t.Error("SubscribeMany should fail without Redis backend")
+	}
+}
+
+func TestEventBusRedisSubscriptionsDisabled(t *testing.T) {
+	bus := NewEventBus(
+		"test-service",
+		WithRedisBackend(&cache.RedisClient{}),
+		WithRedisSubscriptions(false),
+	)
+
+	if bus.RedisSubscriptionsEnabled() {
+		t.Fatal("RedisSubscriptionsEnabled should be false when redis subscriptions are disabled")
+	}
+
+	_, err := bus.SubscribeMany(context.Background(), map[string]EventHandler{
+		"some.event": func(ctx context.Context, envelope EventEnvelope) error { return nil },
+	})
+	if err == nil || !strings.Contains(err.Error(), "disabled") {
+		t.Fatalf("SubscribeMany error = %v, want disabled error", err)
 	}
 }

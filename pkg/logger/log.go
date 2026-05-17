@@ -3,6 +3,7 @@ package logger
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"strconv"
@@ -90,9 +91,9 @@ func WithTimeFormat(format string) Option {
 	}
 }
 
-// WithJSONFormat forces console writer output (production).
+// WithConsoleFormat writes human-readable logs for local development.
 // Preserves any custom output writer set via WithOutput.
-func WithJSONFormat() Option {
+func WithConsoleFormat() Option {
 	return func(l *Logger) {
 		var w io.Writer = os.Stdout
 		l.mu.Lock()
@@ -101,12 +102,23 @@ func WithJSONFormat() Option {
 		}
 		l.output = w
 		l.mu.Unlock()
-		l.zl = l.zl.Output(zerolog.ConsoleWriter{Out: w})
+		l.zl = l.zl.Output(zerolog.ConsoleWriter{
+			Out:        w,
+			TimeFormat: "15:04:05",
+			FormatLevel: func(i interface{}) string {
+				return strings.ToUpper(fmt.Sprintf("%-5s", i))
+			},
+		})
 	}
 }
 
+// WithJSONFormat keeps structured JSON output. JSON is the default logger mode.
+func WithJSONFormat() Option {
+	return func(l *Logger) {}
+}
+
 // New creates a new Logger with the given options.
-// Default: console output, info level, RFC3339 timestamps.
+// Default: JSON output, info level, RFC3339 timestamps.
 func New(opts ...Option) *Logger {
 	l := &Logger{
 		service: "erg-service",

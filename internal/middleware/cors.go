@@ -11,7 +11,7 @@ func CORS() gin.HandlerFunc {
 		c.Header("Access-Control-Allow-Origin", "*")
 		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 		c.Header("Access-Control-Allow-Headers",
-			"Origin, Content-Type, Accept, Authorization, X-Request-ID, X-API-Key")
+			"Origin, Content-Type, Accept, Authorization, X-Request-ID, X-API-Key, X-CSRF-Token")
 		c.Header("Access-Control-Expose-Headers", "X-Request-ID")
 		c.Header("Access-Control-Max-Age", "86400")
 
