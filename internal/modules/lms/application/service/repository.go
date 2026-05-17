@@ -1063,6 +1063,17 @@ func (r *Repository) EnsureIndexes(ctx context.Context) error {
 			Options: options.Index().SetName("idx_lms_announcement_class_target"),
 		},
 	}
+	currentScopeIndexes := []mongo.IndexModel{
+		{
+			Keys: bson.D{
+				{Key: "tenant_id", Value: 1},
+				{Key: "user_id", Value: 1},
+			},
+			Options: options.Index().
+				SetName("idx_lms_current_scope_unique_user").
+				SetUnique(true),
+		},
+	}
 	if _, err := r.attempts.Indexes().CreateMany(ctx, attemptIndexes); err != nil {
 		return fmt.Errorf("lms.ensureIndexes.attempts: %w", err)
 	}
@@ -1089,6 +1100,9 @@ func (r *Repository) EnsureIndexes(ctx context.Context) error {
 	}
 	if _, err := r.announcements.Indexes().CreateMany(ctx, announcementIndexes); err != nil {
 		return fmt.Errorf("lms.ensureIndexes.announcements: %w", err)
+	}
+	if _, err := r.currentScopes.Indexes().CreateMany(ctx, currentScopeIndexes); err != nil {
+		return fmt.Errorf("lms.ensureIndexes.currentScopes: %w", err)
 	}
 	return nil
 }

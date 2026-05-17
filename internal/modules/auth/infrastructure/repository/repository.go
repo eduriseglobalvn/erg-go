@@ -478,6 +478,33 @@ func (r *Repo) RevokeSessionWithReason(ctx context.Context, sessionID string, te
 	return nil
 }
 
+// RotateSessionRefreshToken atomically replaces the stored refresh hash for an active session.
+func (r *Repo) RotateSessionRefreshToken(ctx context.Context, sessionID, tenantID, currentHash, nextHash string, expiresAt time.Time) error {
+	if err := r.ensureDB(); err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	now := time.Now().UTC()
+	result := r.db.WithContext(ctx).
+		Model(&postgrescore.AuthSession{}).
+		Where("session_id = ? AND tenant_id = ? AND refresh_token_hash = ? AND revoked_at IS NULL AND expires_at > ?", sessionID, tenantID, currentHash, now).
+		Updates(map[string]any{
+			"refresh_token_hash": nextHash,
+			"expires_at":         expiresAt.UTC(),
+			"last_active_at":     now,
+			"updated_at":         now,
+		})
+	if result.Error != nil {
+		return fmt.Errorf("auth.repository.rotateSessionRefreshToken: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return ErrSessionNotFound
+	}
+	return nil
+}
+
 // RevokeAllUserSessions revokes every non-revoked session for a user.
 func (r *Repo) RevokeAllUserSessions(ctx context.Context, userID bson.ObjectID, tenantID string) error {
 	return r.RevokeAllUserSessionsWithReason(ctx, userID, tenantID, "logout")

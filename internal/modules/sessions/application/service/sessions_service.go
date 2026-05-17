@@ -51,7 +51,7 @@ func (s *Service) GetCurrentSession(ctx context.Context, tenantID, userID, sessi
 		if err == nil && cached != "" {
 			var cachedResp dto.SessionContextResponse
 			if err := json.Unmarshal([]byte(cached), &cachedResp); err == nil {
-				s.updateLastActiveAsync(ctx, sessionID)
+				s.updateLastActiveAsync(ctx, tenantID, sessionID)
 				return &cachedResp, nil
 			}
 		}
@@ -108,16 +108,16 @@ func (s *Service) GetCurrentSession(ctx context.Context, tenantID, userID, sessi
 	}
 
 	// ── 6. Update last active (fire-and-forget) ─────────────────────────────
-	s.updateLastActiveAsync(ctx, sessionID)
+	s.updateLastActiveAsync(ctx, tenantID, sessionID)
 
 	return &resp, nil
 }
 
-func (s *Service) updateLastActiveAsync(ctx context.Context, sessionID string) {
+func (s *Service) updateLastActiveAsync(ctx context.Context, tenantID, sessionID string) {
 	go func() {
 		updateCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
 		defer cancel()
-		_ = s.deps.Repo.UpdateSessionLastActive(updateCtx, sessionID)
+		_ = s.deps.Repo.UpdateSessionLastActive(updateCtx, tenantID, sessionID)
 	}()
 }
 

@@ -90,8 +90,8 @@ func (r *Repository) GetSessionByID(ctx context.Context, tenantID, sessionID str
 	return mapSessionRecord(&record)
 }
 
-// UpdateSessionLastActive updates the last_active timestamp for a session.
-func (r *Repository) UpdateSessionLastActive(ctx context.Context, sessionID string) error {
+// UpdateSessionLastActive updates the last_active timestamp for a tenant-scoped session.
+func (r *Repository) UpdateSessionLastActive(ctx context.Context, tenantID, sessionID string) error {
 	if err := r.ensureDB(); err != nil {
 		return err
 	}
@@ -101,7 +101,7 @@ func (r *Repository) UpdateSessionLastActive(ctx context.Context, sessionID stri
 	now := time.Now().UTC()
 	if err := r.db.WithContext(ctx).
 		Model(&postgrescore.AuthSession{}).
-		Where("session_id = ?", sessionID).
+		Where("session_id = ? AND tenant_id = ? AND revoked_at IS NULL AND expires_at > ?", sessionID, tenantID, now).
 		Updates(map[string]any{
 			"last_active_at": now,
 			"updated_at":     now,

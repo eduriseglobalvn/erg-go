@@ -1023,6 +1023,11 @@ func (s *AuthService) RefreshToken(ctx context.Context, req *request.RefreshRequ
 	if session.IsRevoked() || time.Now().UTC().After(session.ExpiresAt) {
 		return nil, ErrSessionReplaced
 	}
+	if session.RefreshToken != rtHash {
+		_ = s.repo.RevokeAllUserSessionsWithReason(ctx, user.ID, user.TenantID, "refresh_token_reuse")
+		s.log.WarnContext(ctx).Str("user_id", claims.UserID).Str("session_id", sessionID).Msg("auth.service: stale refresh token hash detected, all sessions revoked")
+		return nil, ErrTokenReuseDetected
+	}
 	if strings.TrimSpace(req.DeviceID) != "" && session.DeviceID != "" && strings.TrimSpace(req.DeviceID) != session.DeviceID {
 		return nil, ErrSessionReplaced
 	}
@@ -1051,6 +1056,15 @@ func (s *AuthService) RefreshToken(ctx context.Context, req *request.RefreshRequ
 	if err != nil {
 		return nil, fmt.Errorf("auth.service.refreshToken: issue pair: %w", err)
 	}
+	nextRefreshHash := hashSHA256(tokens.RefreshToken)
+	if err := s.repo.RotateSessionRefreshToken(ctx, sessionID, user.TenantID, rtHash, nextRefreshHash, time.Now().Add(s.cfg.Auth.RefreshTokenTTL)); err != nil {
+		if errors.Is(err, repository.ErrSessionNotFound) {
+			_ = s.repo.RevokeAllUserSessionsWithReason(ctx, user.ID, user.TenantID, "refresh_token_race")
+			return nil, ErrTokenReuseDetected
+		}
+		return nil, fmt.Errorf("auth.service.refreshToken: rotate refresh hash: %w", err)
+	}
+	_ = s.repo.InvalidateSessionCache(ctx, user.ID.Hex(), sessionID)
 
 	return &response.TokenResponse{
 		AccessToken:  tokens.AccessToken,
