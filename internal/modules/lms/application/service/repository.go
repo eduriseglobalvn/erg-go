@@ -1020,7 +1020,7 @@ func (r *Repository) EnsureIndexes(ctx context.Context) error {
 			Options: options.Index().
 				SetName("idx_lms_student_unique_student_code").
 				SetUnique(true).
-				SetPartialFilterExpression(bson.M{"student_code": bson.M{"$exists": true, "$ne": ""}}),
+				SetPartialFilterExpression(bson.M{"student_code": bson.M{"$type": "string", "$gt": ""}}),
 		},
 		{
 			Keys: bson.D{
@@ -1040,7 +1040,7 @@ func (r *Repository) EnsureIndexes(ctx context.Context) error {
 			Options: options.Index().
 				SetName("idx_lms_student_unique_auth_user").
 				SetUnique(true).
-				SetPartialFilterExpression(bson.M{"auth_user_id": bson.M{"$exists": true, "$ne": ""}}),
+				SetPartialFilterExpression(bson.M{"auth_user_id": bson.M{"$type": "string", "$gt": ""}}),
 		},
 	}
 	questionIndexes := []mongo.IndexModel{

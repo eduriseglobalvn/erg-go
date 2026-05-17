@@ -39,7 +39,7 @@ func Run006LMSIndexes(ctx context.Context, db *mongo.Database) error {
 					Options: options.Index().
 						SetName("idx_lms_student_unique_student_code").
 						SetUnique(true).
-						SetPartialFilterExpression(bson.M{"student_code": bson.M{"$exists": true, "$ne": ""}}),
+						SetPartialFilterExpression(bson.M{"student_code": bson.M{"$type": "string", "$gt": ""}}),
 				},
 				{
 					Keys:    bson.D{{Key: "tenant_id", Value: 1}, {Key: "center_id", Value: 1}, {Key: "class_id", Value: 1}, {Key: "status", Value: 1}, {Key: "student_code", Value: 1}},
@@ -50,7 +50,7 @@ func Run006LMSIndexes(ctx context.Context, db *mongo.Database) error {
 					Options: options.Index().
 						SetName("idx_lms_student_unique_auth_user").
 						SetUnique(true).
-						SetPartialFilterExpression(bson.M{"auth_user_id": bson.M{"$exists": true, "$ne": ""}}),
+						SetPartialFilterExpression(bson.M{"auth_user_id": bson.M{"$type": "string", "$gt": ""}}),
 				},
 			},
 		},
