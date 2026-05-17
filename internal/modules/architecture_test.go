@@ -60,3 +60,28 @@ func TestModulesFollowCanonicalArchitecture(t *testing.T) {
 		}
 	}
 }
+
+func TestRelationshipHandoffCoversRemainingEpicTasks(t *testing.T) {
+	content, err := os.ReadFile(filepath.Join("..", "..", "docs", "architecture", "model-relationships.md"))
+	if err != nil {
+		t.Fatalf("read relationship handoff: %v", err)
+	}
+	text := string(content)
+	required := []string{
+		"ERG-129",
+		"ERG-130",
+		"ERG-131",
+		"ERG-132",
+		"ERG-133",
+		"ERG-134",
+		"Migration And Rollback Plan",
+		"Mongo Relationship Matrix",
+		"API DTO And Form Validation Rules",
+		"Handoff Checklist",
+	}
+	for _, item := range required {
+		if !strings.Contains(text, item) {
+			t.Fatalf("relationship handoff missing %q", item)
+		}
+	}
+}

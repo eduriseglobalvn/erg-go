@@ -34,3 +34,36 @@ func TestClampLimitUsesDefaultAndMaximum(t *testing.T) {
 		t.Fatalf("ClampLimit keep = %d", got)
 	}
 }
+
+func TestValidateReferenceID(t *testing.T) {
+	valid := []string{
+		"665000000000000000000101",
+		"tenant-001",
+		"scope:school_01",
+		"file.name",
+	}
+	for _, value := range valid {
+		if err := ValidateReferenceID(value); err != nil {
+			t.Fatalf("ValidateReferenceID(%q) unexpected error: %v", value, err)
+		}
+	}
+
+	invalid := []string{"", "  ", "../admin", "id with space", "id\nnext"}
+	for _, value := range invalid {
+		if err := ValidateReferenceID(value); err == nil {
+			t.Fatalf("ValidateReferenceID(%q) expected error", value)
+		}
+	}
+}
+
+func TestValidateReferenceIDsRejectsDuplicatesAndOversizedBatches(t *testing.T) {
+	if err := ValidateReferenceIDs([]string{"a", "b"}, 2); err != nil {
+		t.Fatalf("ValidateReferenceIDs valid unexpected error: %v", err)
+	}
+	if err := ValidateReferenceIDs([]string{"a", "a"}, 10); err == nil {
+		t.Fatal("ValidateReferenceIDs duplicate expected error")
+	}
+	if err := ValidateReferenceIDs([]string{"a", "b", "c"}, 2); err == nil {
+		t.Fatal("ValidateReferenceIDs max expected error")
+	}
+}

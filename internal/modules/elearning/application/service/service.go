@@ -10,6 +10,7 @@ import (
 	"erg.ninja/internal/modules/elearning/api/dto"
 	entities "erg.ninja/internal/modules/elearning/domain/entity"
 	elearningrepo "erg.ninja/internal/modules/elearning/infrastructure/repository"
+	platformvalidation "erg.ninja/internal/platform/validation"
 	"erg.ninja/pkg/logger"
 )
 
@@ -220,7 +221,21 @@ func (s *Service) UpdateCategory(ctx context.Context, tenantID, id string, req *
 		cat.Description = req.Description
 	}
 	if req.ParentID != "" {
-		cat.ParentID = &req.ParentID
+		parentID := platformvalidation.NormalizeReferenceID(req.ParentID)
+		if err := platformvalidation.ValidateReferenceID(parentID); err != nil {
+			return nil, fmt.Errorf("elearning.svc.UpdateCategory: parent_id invalid")
+		}
+		if parentID == id {
+			return nil, fmt.Errorf("elearning.svc.UpdateCategory: parent_id cannot reference the same category")
+		}
+		parent, err := s.repo.GetCategoryByID(ctx, tenantID, parentID)
+		if err != nil {
+			return nil, fmt.Errorf("elearning.svc.UpdateCategory parent check: %w", err)
+		}
+		if parent == nil {
+			return nil, fmt.Errorf("elearning.svc.UpdateCategory: parent category %s not found", parentID)
+		}
+		cat.ParentID = &parentID
 	}
 	if req.Order != 0 {
 		cat.Order = req.Order
@@ -305,7 +320,18 @@ func (s *Service) UpdateLevel(ctx context.Context, tenantID, id string, req *dto
 		return nil, nil
 	}
 	if req.CategoryID != "" {
-		lvl.CategoryID = req.CategoryID
+		categoryID := platformvalidation.NormalizeReferenceID(req.CategoryID)
+		if err := platformvalidation.ValidateReferenceID(categoryID); err != nil {
+			return nil, fmt.Errorf("elearning.svc.UpdateLevel: category_id invalid")
+		}
+		cat, err := s.repo.GetCategoryByID(ctx, tenantID, categoryID)
+		if err != nil {
+			return nil, fmt.Errorf("elearning.svc.UpdateLevel category check: %w", err)
+		}
+		if cat == nil {
+			return nil, fmt.Errorf("elearning.svc.UpdateLevel: category %s not found", categoryID)
+		}
+		lvl.CategoryID = categoryID
 	}
 	if req.Name != "" {
 		lvl.Name = req.Name
@@ -376,7 +402,18 @@ func (s *Service) UpdateUnit(ctx context.Context, tenantID, id string, req *dto.
 		return nil, nil
 	}
 	if req.LevelID != "" {
-		unit.LevelID = req.LevelID
+		levelID := platformvalidation.NormalizeReferenceID(req.LevelID)
+		if err := platformvalidation.ValidateReferenceID(levelID); err != nil {
+			return nil, fmt.Errorf("elearning.svc.UpdateUnit: level_id invalid")
+		}
+		lvl, err := s.repo.GetLevelByID(ctx, tenantID, levelID)
+		if err != nil {
+			return nil, fmt.Errorf("elearning.svc.UpdateUnit level check: %w", err)
+		}
+		if lvl == nil {
+			return nil, fmt.Errorf("elearning.svc.UpdateUnit: level %s not found", levelID)
+		}
+		unit.LevelID = levelID
 	}
 	if req.Name != "" {
 		unit.Name = req.Name

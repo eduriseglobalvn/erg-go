@@ -905,7 +905,7 @@ func (r *Repository) CreateAttempt(ctx context.Context, a *Attempt) error {
 }
 
 func (r *Repository) EnsureIndexes(ctx context.Context) error {
-	models := []mongo.IndexModel{
+	attemptIndexes := []mongo.IndexModel{
 		{
 			Keys: bson.D{
 				{Key: "tenant_id", Value: 1},
@@ -945,6 +945,8 @@ func (r *Repository) EnsureIndexes(ctx context.Context) error {
 			},
 			Options: options.Index().SetName("idx_lms_attempt_student_scores"),
 		},
+	}
+	assignmentIndexes := []mongo.IndexModel{
 		{
 			Keys: bson.D{
 				{Key: "tenant_id", Value: 1},
@@ -963,6 +965,8 @@ func (r *Repository) EnsureIndexes(ctx context.Context) error {
 			},
 			Options: options.Index().SetName("idx_lms_assignment_quiz_class"),
 		},
+	}
+	quizIndexes := []mongo.IndexModel{
 		{
 			Keys: bson.D{
 				{Key: "tenant_id", Value: 1},
@@ -974,14 +978,106 @@ func (r *Repository) EnsureIndexes(ctx context.Context) error {
 			Options: options.Index().SetName("idx_lms_quiz_catalog"),
 		},
 	}
-	if _, err := r.attempts.Indexes().CreateMany(ctx, models[:4]); err != nil {
+	classIndexes := []mongo.IndexModel{
+		{
+			Keys: bson.D{
+				{Key: "tenant_id", Value: 1},
+				{Key: "center_id", Value: 1},
+				{Key: "status", Value: 1},
+				{Key: "name", Value: 1},
+			},
+			Options: options.Index().SetName("idx_lms_class_center_status"),
+		},
+	}
+	studentIndexes := []mongo.IndexModel{
+		{
+			Keys: bson.D{
+				{Key: "tenant_id", Value: 1},
+				{Key: "class_id", Value: 1},
+				{Key: "status", Value: 1},
+				{Key: "full_name", Value: 1},
+			},
+			Options: options.Index().SetName("idx_lms_student_class_status"),
+		},
+		{
+			Keys: bson.D{
+				{Key: "tenant_id", Value: 1},
+				{Key: "auth_user_id", Value: 1},
+				{Key: "status", Value: 1},
+			},
+			Options: options.Index().SetName("idx_lms_student_auth_user"),
+		},
+	}
+	questionIndexes := []mongo.IndexModel{
+		{
+			Keys: bson.D{
+				{Key: "tenant_id", Value: 1},
+				{Key: "subject_id", Value: 1},
+				{Key: "level_id", Value: 1},
+				{Key: "topic_id", Value: 1},
+				{Key: "status", Value: 1},
+			},
+			Options: options.Index().SetName("idx_lms_question_catalog"),
+		},
+	}
+	threadIndexes := []mongo.IndexModel{
+		{
+			Keys: bson.D{
+				{Key: "tenant_id", Value: 1},
+				{Key: "class_id", Value: 1},
+				{Key: "assignment_id", Value: 1},
+				{Key: "updated_at", Value: -1},
+			},
+			Options: options.Index().SetName("idx_lms_thread_class_assignment"),
+		},
+	}
+	replyIndexes := []mongo.IndexModel{
+		{
+			Keys: bson.D{
+				{Key: "tenant_id", Value: 1},
+				{Key: "thread_id", Value: 1},
+				{Key: "created_at", Value: 1},
+			},
+			Options: options.Index().SetName("idx_lms_reply_thread_created"),
+		},
+	}
+	announcementIndexes := []mongo.IndexModel{
+		{
+			Keys: bson.D{
+				{Key: "tenant_id", Value: 1},
+				{Key: "class_ids", Value: 1},
+				{Key: "target_type", Value: 1},
+				{Key: "created_at", Value: -1},
+			},
+			Options: options.Index().SetName("idx_lms_announcement_class_target"),
+		},
+	}
+	if _, err := r.attempts.Indexes().CreateMany(ctx, attemptIndexes); err != nil {
 		return fmt.Errorf("lms.ensureIndexes.attempts: %w", err)
 	}
-	if _, err := r.assignments.Indexes().CreateMany(ctx, models[4:6]); err != nil {
+	if _, err := r.assignments.Indexes().CreateMany(ctx, assignmentIndexes); err != nil {
 		return fmt.Errorf("lms.ensureIndexes.assignments: %w", err)
 	}
-	if _, err := r.quizzes.Indexes().CreateMany(ctx, models[6:]); err != nil {
+	if _, err := r.quizzes.Indexes().CreateMany(ctx, quizIndexes); err != nil {
 		return fmt.Errorf("lms.ensureIndexes.quizzes: %w", err)
+	}
+	if _, err := r.classes.Indexes().CreateMany(ctx, classIndexes); err != nil {
+		return fmt.Errorf("lms.ensureIndexes.classes: %w", err)
+	}
+	if _, err := r.students.Indexes().CreateMany(ctx, studentIndexes); err != nil {
+		return fmt.Errorf("lms.ensureIndexes.students: %w", err)
+	}
+	if _, err := r.questions.Indexes().CreateMany(ctx, questionIndexes); err != nil {
+		return fmt.Errorf("lms.ensureIndexes.questions: %w", err)
+	}
+	if _, err := r.threads.Indexes().CreateMany(ctx, threadIndexes); err != nil {
+		return fmt.Errorf("lms.ensureIndexes.threads: %w", err)
+	}
+	if _, err := r.replies.Indexes().CreateMany(ctx, replyIndexes); err != nil {
+		return fmt.Errorf("lms.ensureIndexes.replies: %w", err)
+	}
+	if _, err := r.announcements.Indexes().CreateMany(ctx, announcementIndexes); err != nil {
+		return fmt.Errorf("lms.ensureIndexes.announcements: %w", err)
 	}
 	return nil
 }
