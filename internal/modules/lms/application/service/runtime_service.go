@@ -187,6 +187,9 @@ func (s *Service) StartAttempt(ctx context.Context, tenantID string, actor Actor
 }
 
 func (s *Service) SaveAnswer(ctx context.Context, tenantID, attemptID, questionID string, req SaveAnswerRequestDTO) (AnswerResultResponseDTO, error) {
+	if err := validateSingleAnswerPayload(req.Answer, req.ClientResult); err != nil {
+		return AnswerResultResponseDTO{}, err
+	}
 	attempt, err := s.repo.GetAttempt(ctx, tenantID, attemptID)
 	if err != nil {
 		return AnswerResultResponseDTO{}, err
@@ -216,6 +219,9 @@ func (s *Service) SaveAnswer(ctx context.Context, tenantID, attemptID, questionI
 }
 
 func (s *Service) SubmitAttempt(ctx context.Context, tenantID, attemptID string, req SubmitAttemptRequestDTO) (AttemptSubmitResponseDTO, error) {
+	if err := validateAttemptPayload(req.Answers, nil, nil); err != nil {
+		return AttemptSubmitResponseDTO{}, err
+	}
 	attempt, err := s.repo.GetAttempt(ctx, tenantID, attemptID)
 	if err != nil {
 		return AttemptSubmitResponseDTO{}, err
@@ -276,6 +282,9 @@ func attemptSubmitResult(attempt Attempt) AttemptSubmitResponseDTO {
 }
 
 func (s *Service) SyncAttempt(ctx context.Context, tenantID, attemptID string, req AttemptSyncRequestDTO) (AttemptSyncResponseDTO, error) {
+	if err := validateAttemptPayload(nil, req.Events, req.Client); err != nil {
+		return AttemptSyncResponseDTO{}, err
+	}
 	attempt, err := s.repo.GetAttempt(ctx, tenantID, attemptID)
 	if err != nil {
 		return AttemptSyncResponseDTO{}, err

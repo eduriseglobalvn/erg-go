@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
@@ -117,6 +118,9 @@ func (s *Service) AssignmentReport(ctx context.Context, tenantID, assignmentID s
 }
 
 func (s *Service) ExportReport(ctx context.Context, tenantID string, actor Actor, reportType, centerID, classID string) (ReportExportResponseDTO, error) {
+	if normalizedReportType(reportType) == "roster" {
+		return s.exportStudentRoster(ctx, tenantID, actor, centerID, classID)
+	}
 	report, err := s.ClassroomReport(ctx, tenantID, actor, centerID, classID, "")
 	if err != nil {
 		return ReportExportResponseDTO{}, err
@@ -129,6 +133,74 @@ func (s *Service) ExportReport(ctx context.Context, tenantID string, actor Actor
 	}
 	w.Flush()
 	return ReportExportResponseDTO{DownloadURL: "data:text/csv;charset=utf-8," + url.QueryEscape(b.String())}, nil
+}
+
+func (s *Service) exportStudentRoster(ctx context.Context, tenantID string, actor Actor, centerID, classID string) (ReportExportResponseDTO, error) {
+	var b strings.Builder
+	w := csv.NewWriter(&b)
+	_ = w.Write([]string{
+		"studentId", "studentCode", "fullName", "username", "email", "gender", "birthday", "phone", "address",
+		"parentName", "parentPhone", "parentEmail", "parentRelationship", "enrollmentDate",
+		"schoolOrCenterId", "schoolOrCenterCode", "schoolOrCenterName", "schoolOrCenterType",
+		"classId", "className", "grade", "academicYear", "status", "note",
+	})
+	cursor := ""
+	for {
+		page, err := s.ListStudents(ctx, tenantID, actor, StudentListRequestDTO{CenterID: centerID, ClassID: classID, Cursor: cursor, Limit: maxStudentBatchSize})
+		if err != nil {
+			return ReportExportResponseDTO{}, err
+		}
+		for _, student := range page.Items {
+			_ = w.Write([]string{
+				student.ID,
+				student.StudentCode,
+				student.FullName,
+				student.Username,
+				student.Email,
+				student.Gender,
+				formatDate(student.Birthday),
+				student.Phone,
+				student.Address,
+				student.ParentName,
+				student.ParentPhone,
+				student.ParentEmail,
+				student.ParentRelationship,
+				formatDate(student.EnrollmentDate),
+				student.CenterID,
+				student.CenterCode,
+				student.CenterName,
+				student.CenterType,
+				student.ClassID,
+				student.ClassName,
+				student.Grade,
+				student.AcademicYear,
+				student.Status,
+				student.Note,
+			})
+		}
+		if page.NextCursor == "" {
+			break
+		}
+		cursor = page.NextCursor
+	}
+	w.Flush()
+	return ReportExportResponseDTO{DownloadURL: "data:text/csv;charset=utf-8," + url.QueryEscape(b.String())}, nil
+}
+
+func normalizedReportType(reportType string) string {
+	switch strings.ToLower(strings.TrimSpace(reportType)) {
+	case "roster", "student_roster", "students", "student_profiles":
+		return "roster"
+	default:
+		return strings.ToLower(strings.TrimSpace(reportType))
+	}
+}
+
+func formatDate(value *time.Time) string {
+	if value == nil {
+		return ""
+	}
+	return value.Format("2006-01-02")
 }
 
 func (s *Service) ListInternalDocuments(ctx context.Context, tenantID string, actor Actor, typ, keyword, subjectID string) (InternalDocumentListResponseDTO, error) {

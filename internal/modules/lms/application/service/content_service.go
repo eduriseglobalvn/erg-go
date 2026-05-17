@@ -62,6 +62,9 @@ func (s *Service) CreateQuestion(ctx context.Context, tenantID string, actor Act
 	if err != nil {
 		return QuestionResponseDTO{}, err
 	}
+	if err := validateQuestionPayload(kind, req.Stem, req.Choices, req.Answer, req.Metadata); err != nil {
+		return QuestionResponseDTO{}, err
+	}
 	subjectID, err := objectID(req.SubjectID)
 	if err != nil {
 		return QuestionResponseDTO{}, err
@@ -137,6 +140,29 @@ func (s *Service) UpdateQuestion(ctx context.Context, tenantID string, actor Act
 	if req.Metadata != nil {
 		update["metadata"] = req.Metadata
 	}
+	nextKind := existing.Type
+	if v, ok := update["type"].(string); ok {
+		nextKind = v
+	}
+	nextStem := existing.Stem
+	if v, ok := update["stem"].(string); ok {
+		nextStem = v
+	}
+	nextChoices := choicesToDTO(existing.Choices)
+	if v, ok := update["choices"].([]QuestionChoice); ok {
+		nextChoices = choicesToDTO(v)
+	}
+	nextAnswer := existing.Answer
+	if v, ok := update["answer"]; ok {
+		nextAnswer = v
+	}
+	nextMetadata := existing.Metadata
+	if v, ok := update["metadata"].(map[string]any); ok {
+		nextMetadata = v
+	}
+	if err := validateQuestionPayload(nextKind, nextStem, nextChoices, nextAnswer, nextMetadata); err != nil {
+		return QuestionResponseDTO{}, err
+	}
 	q, err := s.repo.UpdateQuestion(ctx, tenantID, id, update)
 	if err != nil {
 		return QuestionResponseDTO{}, err
@@ -186,6 +212,9 @@ func (s *Service) CreateQuiz(ctx context.Context, tenantID string, actor Actor, 
 	if err := s.validateContentScope(ctx, tenantID, actor, req.Scope); err != nil {
 		return QuizResponseDTO{}, err
 	}
+	if err := validateQuizPayload(req.Title, nil, req.Settings, nil, nil); err != nil {
+		return QuizResponseDTO{}, err
+	}
 	quiz, err := quizFromCreateReq(tenantID, req)
 	if err != nil {
 		return QuizResponseDTO{}, err
@@ -212,6 +241,9 @@ func (s *Service) CreateQuizFromQuestions(ctx context.Context, tenantID string, 
 		return QuizResponseDTO{}, err
 	}
 	quiz := &Quiz{TenantID: tenantID, Scope: first.Scope, Title: req.Title, Kind: req.Kind, SubjectID: first.SubjectID, LevelID: first.LevelID, QuestionIDs: objectIDsOrNil(req.QuestionIDs), Settings: req.Settings}
+	if err := validateQuizPayload(quiz.Title, nil, quiz.Settings, nil, nil); err != nil {
+		return QuizResponseDTO{}, err
+	}
 	if err := s.repo.CreateQuiz(ctx, quiz); err != nil {
 		return QuizResponseDTO{}, err
 	}
@@ -246,6 +278,16 @@ func (s *Service) GetQuizDetail(ctx context.Context, tenantID, id string) (QuizD
 }
 
 func (s *Service) UpdateQuiz(ctx context.Context, tenantID, id string, req UpdateQuizRequestDTO) (QuizDetailResponseDTO, error) {
+	existing, err := s.repo.GetQuiz(ctx, tenantID, id)
+	if err != nil {
+		return QuizDetailResponseDTO{}, err
+	}
+	if existing == nil {
+		return QuizDetailResponseDTO{}, errNotFound
+	}
+	if err := validateQuizPayload(existing.Title, req.Slides, req.Settings, req.Result, req.Theme); err != nil {
+		return QuizDetailResponseDTO{}, err
+	}
 	quiz, err := s.repo.UpdateQuiz(ctx, tenantID, id, bson.M{"slides": req.Slides, "settings": req.Settings, "result": req.Result, "theme": req.Theme})
 	if err != nil {
 		return QuizDetailResponseDTO{}, err

@@ -41,6 +41,9 @@ func (s *Service) SaveAnswerForActor(ctx context.Context, tenantID string, actor
 }
 
 func (s *Service) SaveAttemptDraft(ctx context.Context, tenantID string, actor Actor, attemptID string, req AttemptDraftRequestDTO) (AttemptResponseDTO, error) {
+	if err := validateAttemptPayload(req.Answers, req.Events, req.Client); err != nil {
+		return AttemptResponseDTO{}, err
+	}
 	attempt, err := s.repo.GetAttempt(ctx, tenantID, attemptID)
 	if err != nil {
 		return AttemptResponseDTO{}, err

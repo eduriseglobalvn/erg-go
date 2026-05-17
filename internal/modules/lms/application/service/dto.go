@@ -172,6 +172,8 @@ type CreateStudentRequestDTO struct {
 	FullName           string     `json:"fullName" binding:"required"`
 	ClassID            string     `json:"classId" binding:"required"`
 	StudentCode        string     `json:"studentCode"`
+	Username           string     `json:"username"`
+	Password           string     `json:"password"`
 	Email              string     `json:"email"`
 	Gender             string     `json:"gender"`
 	Birthday           *time.Time `json:"birthday"`
