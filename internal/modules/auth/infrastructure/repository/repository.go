@@ -173,6 +173,29 @@ func (r *Repo) CreateUser(ctx context.Context, user *entities.User) error {
 	return nil
 }
 
+// DeleteUserByID permanently removes a user created during a failed provisioning flow.
+func (r *Repo) DeleteUserByID(ctx context.Context, id bson.ObjectID) error {
+	if err := r.ensureDB(); err != nil {
+		return err
+	}
+	if id.IsZero() {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		userID := id.Hex()
+		if err := tx.Where("user_id = ?", userID).Delete(&postgrescore.UserRole{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Unscoped().Where("id = ?", userID).Delete(&postgrescore.AuthUser{}).Error; err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
 // UpdateUserStatus updates a user's status field.
 func (r *Repo) UpdateUserStatus(ctx context.Context, email string, tenantID string, status entities.UserStatus) error {
 	if err := r.ensureDB(); err != nil {

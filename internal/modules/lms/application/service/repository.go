@@ -993,6 +993,15 @@ func (r *Repository) EnsureIndexes(ctx context.Context) error {
 		{
 			Keys: bson.D{
 				{Key: "tenant_id", Value: 1},
+				{Key: "username", Value: 1},
+			},
+			Options: options.Index().
+				SetName("idx_lms_student_unique_username").
+				SetUnique(true),
+		},
+		{
+			Keys: bson.D{
+				{Key: "tenant_id", Value: 1},
 				{Key: "class_id", Value: 1},
 				{Key: "status", Value: 1},
 				{Key: "full_name", Value: 1},
@@ -1003,9 +1012,11 @@ func (r *Repository) EnsureIndexes(ctx context.Context) error {
 			Keys: bson.D{
 				{Key: "tenant_id", Value: 1},
 				{Key: "auth_user_id", Value: 1},
-				{Key: "status", Value: 1},
 			},
-			Options: options.Index().SetName("idx_lms_student_auth_user"),
+			Options: options.Index().
+				SetName("idx_lms_student_unique_auth_user").
+				SetUnique(true).
+				SetPartialFilterExpression(bson.M{"auth_user_id": bson.M{"$exists": true, "$ne": ""}}),
 		},
 	}
 	questionIndexes := []mongo.IndexModel{

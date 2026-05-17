@@ -946,10 +946,12 @@ func classToDTO(class Class, centerName string) ClassResponseDTO {
 }
 
 func usernameFromName(name string) string {
-	username := strings.ToLower(strings.TrimSpace(name))
-	username = strings.NewReplacer(" ", ".", "/", ".", "\\", ".", "@", "", "'", "").Replace(username)
+	username := normalizeUsername(name)
 	if username == "" {
 		username = "student"
+	}
+	if len(username) > 56 {
+		username = strings.Trim(username[:56], "._-")
 	}
 	return fmt.Sprintf("%s.%d", username, time.Now().Unix()%100000)
 }
@@ -982,6 +984,8 @@ func writeServiceError(statusCode func(int, string, string), err error) {
 		statusCode(http.StatusBadRequest, "INVALID_QUESTION_KIND", "invalid question kind")
 	case errors.Is(err, errInvalidEducationUnitType):
 		statusCode(http.StatusBadRequest, "INVALID_EDUCATION_UNIT_TYPE", "education unit type must be school or center")
+	case errors.Is(err, errInvalidStudentAccountPayload):
+		statusCode(http.StatusBadRequest, "INVALID_STUDENT_ACCOUNT_PAYLOAD", "invalid student account payload")
 	case errors.Is(err, errInvalidAccessPolicy):
 		statusCode(http.StatusBadRequest, "INVALID_ACCESS_POLICY", err.Error())
 	case errors.Is(err, errAccessManagementUnavailable):

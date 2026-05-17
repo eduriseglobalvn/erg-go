@@ -124,7 +124,10 @@ func (s *Service) CommitGoogleSheetImport(ctx context.Context, tenantID string, 
 		if duplicate {
 			job.Duplicates++
 		}
-		password := defaultStudentImportPassword
+		password, err := secureTempPassword()
+		if err != nil {
+			return GoogleSheetCommitResponseDTO{}, err
+		}
 		authUser, err := s.createStudentAuthUser(ctx, tenantID, merged.FullName, username, password, BulkCreateStudentAccountRowDTO{
 			RowID:     commitRow.RowID,
 			RowNumber: merged.RowNumber,
@@ -259,9 +262,15 @@ func (s *Service) uniqueStudentUsername(ctx context.Context, tenantID, fullName,
 	if base == "" {
 		base = "student"
 	}
+	if len(base) > 56 {
+		base = strings.Trim(base[:56], "._-")
+	}
 	username := base
 	duplicate := false
 	for i := 0; i < 100; i++ {
+		if err := validateStudentUsername(username); err != nil {
+			return "", false, err
+		}
 		exists, err := s.repo.UsernameExists(ctx, tenantID, username)
 		if err != nil {
 			return "", false, err
