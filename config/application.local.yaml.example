@@ -7,7 +7,7 @@ database:
 
 auth:
   jwt_secret: replace-with-local-jwt-secret-min-32-chars
-  google_bridge_secret: replace-with-local-google-bridge-secret
+  google_client_id: replace-with-google-oauth-web-client-id.apps.googleusercontent.com
 
 smtp:
   host: smtp.example.com
@@ -21,3 +21,11 @@ r2:
   secret_key: replace-with-local-r2-secret-key
   bucket_name: erg-dev
   public_domain: https://media.example.com
+
+ai:
+  provider: groq
+  groq_api_key: replace-with-local-groq-api-key
+  groq_model: openai/gpt-oss-120b
+  huggingface_image_api_key: replace-with-local-huggingface-token
+  huggingface_image_provider: fal-ai
+  huggingface_image_model: black-forest-labs/FLUX.1-Krea-dev

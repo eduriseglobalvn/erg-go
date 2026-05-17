@@ -20,6 +20,12 @@ telemetry:
   enabled: true
   environment: production
 
+auth:
+  # Production can intentionally raise password hash cost if p95 latency budget
+  # and CPU capacity allow it. The shared default favors local/dev feedback speed.
+  argon2_memory: 65536
+  argon2_iterations: 3
+
 mongodb:
   read_preference: primaryPreferred
   max_pool_size: 300
@@ -33,3 +39,12 @@ redis:
 queue:
   redis_tls: true
   concurrency: 50
+
+ai:
+  provider: groq
+  groq_model: openai/gpt-oss-120b
+  groq_base_url: https://api.groq.com/openai/v1
+  groq_timeout: 30s
+  groq_max_completion_tokens: 4096
+  groq_temperature: 1
+  groq_reasoning_effort: medium

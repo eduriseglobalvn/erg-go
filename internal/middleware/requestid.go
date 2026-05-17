@@ -6,6 +6,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+
+	platformctx "erg.ninja/internal/platform/context"
 )
 
 // RequestID generates and attaches a unique request ID to each request.
@@ -15,6 +17,7 @@ func RequestID() gin.HandlerFunc {
 		if requestID == "" {
 			requestID = uuid.New().String()
 		}
+		c.Request = c.Request.WithContext(platformctx.WithRequestID(c.Request.Context(), requestID))
 		c.Set("request_id", requestID)
 		c.Header("X-Request-ID", requestID)
 		c.Next()
@@ -33,6 +36,9 @@ func GetRequestID(c *gin.Context) string {
 func GetRequestIDFromContext(ctx context.Context) string {
 	if ctx == nil {
 		return ""
+	}
+	if id := platformctx.RequestID(ctx); id != "" {
+		return id
 	}
 	if v, ok := ctx.Value("request_id").(string); ok {
 		return v

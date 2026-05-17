@@ -28,12 +28,19 @@ type JWTValidator struct {
 
 // JWTClaims represents the standard claims extracted from a JWT.
 type JWTClaims struct {
-	UserID      string   `json:"user_id,omitempty"`
-	Subject     string   `json:"sub,omitempty"`
-	Email       string   `json:"email,omitempty"`
-	SessionID   string   `json:"session_id,omitempty"`
-	Permissions []string `json:"permissions,omitempty"`
-	Roles       []string `json:"roles,omitempty"`
+	UserID            string            `json:"user_id,omitempty"`
+	Subject           string            `json:"sub,omitempty"`
+	Email             string            `json:"email,omitempty"`
+	SessionID         string            `json:"session_id,omitempty"`
+	TenantID          string            `json:"tenant_id,omitempty"`
+	AccountType       string            `json:"account_type,omitempty"`
+	AccessLevel       string            `json:"access_level,omitempty"`
+	Portal            string            `json:"portal,omitempty"`
+	Portals           []string          `json:"portals,omitempty"`
+	Permissions       []string          `json:"permissions,omitempty"`
+	DeniedPermissions []string          `json:"denied_permissions,omitempty"`
+	Roles             []string          `json:"roles,omitempty"`
+	Attributes        map[string]string `json:"attributes,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -254,6 +261,27 @@ func WithIssuer(issuer string) AuthProviderOption {
 	return func(p *AuthServiceProvider) { p.issuer = issuer }
 }
 
+// TokenPairOption enriches the access token claims emitted by IssuePair.
+type TokenPairOption func(*JWTClaims)
+
+// WithPortals adds the list of product portals the access token may enter.
+func WithPortals(portals []string) TokenPairOption {
+	return func(c *JWTClaims) { c.Portals = append([]string(nil), portals...) }
+}
+
+// WithAccountAccess adds coarse-grained account classification to the access token.
+func WithAccountAccess(accountType, accessLevel string) TokenPairOption {
+	return func(c *JWTClaims) {
+		c.AccountType = accountType
+		c.AccessLevel = accessLevel
+	}
+}
+
+// WithDeniedPermissions adds explicit permission denies to the access token.
+func WithDeniedPermissions(denied []string) TokenPairOption {
+	return func(c *JWTClaims) { c.DeniedPermissions = append([]string(nil), denied...) }
+}
+
 // NewAuthServiceProvider creates a new provider from secret strings.
 // Falls back to sensible defaults (15m access, 7d refresh).
 func NewAuthServiceProvider(accessSecret, refreshSecret string, opts ...AuthProviderOption) *AuthServiceProvider {
@@ -285,7 +313,7 @@ func randomProviderSecret() string {
 }
 
 // IssuePair creates a new access + refresh token pair for the given claims.
-func (p *AuthServiceProvider) IssuePair(sessionID, userID, email string, roles []string, perms []string) (*TokenPair, error) {
+func (p *AuthServiceProvider) IssuePair(sessionID, userID, email string, roles []string, perms []string, opts ...TokenPairOption) (*TokenPair, error) {
 	now := time.Now()
 	atClaims := &JWTClaims{
 		UserID:      userID,
@@ -299,6 +327,11 @@ func (p *AuthServiceProvider) IssuePair(sessionID, userID, email string, roles [
 			IssuedAt:  jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(now.Add(p.accessExpiry)),
 		},
+	}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(atClaims)
+		}
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, atClaims)
 	atSigned, err := token.SignedString(p.accessSecret)

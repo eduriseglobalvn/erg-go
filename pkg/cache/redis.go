@@ -10,6 +10,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -31,6 +33,12 @@ type RedisClient struct {
 	log    *logger.Logger
 }
 
+type redisInternalLogger struct {
+	log  *logger.Logger
+	mu   sync.Mutex
+	last map[string]time.Time
+}
+
 // RedisOption configures a RedisClient.
 type RedisOption func(*RedisClient)
 
@@ -48,6 +56,7 @@ func NewRedisClient(ctx context.Context, cfg config.RedisConfig, opts ...RedisOp
 	for _, o := range opts {
 		o(r)
 	}
+	redis.SetLogger(newRedisInternalLogger(r.log))
 
 	options := &redis.Options{
 		Addr:         fmt.Sprintf("%s:%d", cfg.Host, cfg.Port),
@@ -186,9 +195,10 @@ func (r *RedisClient) Publish(ctx context.Context, channel string, message inter
 	return nil
 }
 
-// Subscribe listens for messages on a channel. The cancel function stops the subscription.
-func (r *RedisClient) Subscribe(ctx context.Context, channel string) (*redis.PubSub, func()) {
-	pubsub := r.client.Subscribe(ctx, channel)
+// Subscribe listens for messages on one or more channels.
+// The cancel function stops the subscription.
+func (r *RedisClient) Subscribe(ctx context.Context, channels ...string) (*redis.PubSub, func()) {
+	pubsub := r.client.Subscribe(ctx, channels...)
 	return pubsub, func() { _ = pubsub.Close() }
 }
 
@@ -284,4 +294,36 @@ func generateLockValue() (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(b), nil
+}
+
+func newRedisInternalLogger(log *logger.Logger) *redisInternalLogger {
+	if log == nil {
+		log = logger.NoOp()
+	}
+	return &redisInternalLogger{
+		log:  log,
+		last: make(map[string]time.Time),
+	}
+}
+
+func (l *redisInternalLogger) Printf(ctx context.Context, format string, v ...interface{}) {
+	msg := fmt.Sprintf(format, v...)
+	if strings.Contains(msg, "discarding bad PubSub connection") && !l.shouldLog(msg, 30*time.Second) {
+		return
+	}
+	l.log.DebugContext(ctx).
+		Str("component", "go-redis").
+		Msg(msg)
+}
+
+func (l *redisInternalLogger) shouldLog(key string, interval time.Duration) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	now := time.Now()
+	if last, ok := l.last[key]; ok && now.Sub(last) < interval {
+		return false
+	}
+	l.last[key] = now
+	return true
 }

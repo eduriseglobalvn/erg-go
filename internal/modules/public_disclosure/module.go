@@ -6,8 +6,9 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"erg.ninja/internal/modules/documents"
-	"erg.ninja/internal/modules/public_disclosure/repository"
-	"erg.ninja/internal/modules/public_disclosure/service"
+	publiccontroller "erg.ninja/internal/modules/public_disclosure/api/controller"
+	"erg.ninja/internal/modules/public_disclosure/application/service"
+	"erg.ninja/internal/modules/public_disclosure/infrastructure/repository"
 	"erg.ninja/pkg/auth"
 	"erg.ninja/pkg/config"
 	"erg.ninja/pkg/database"
@@ -28,13 +29,13 @@ type Module struct {
 	deps Deps
 	repo *repository.Repository
 	svc  *service.Service
-	ctrl *Controller
+	ctrl *publiccontroller.Controller
 }
 
 func NewModule(deps Deps) *Module {
 	repo := repository.NewRepository(deps.Mongo)
 	svc := service.NewService(repo, deps.DocSvc, deps.Log)
-	ctrl := NewController(svc, deps.Log, deps.JWTValidator)
+	ctrl := publiccontroller.NewController(svc, deps.Log, deps.JWTValidator)
 
 	return &Module{
 		deps: deps,

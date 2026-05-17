@@ -1,0 +1,846 @@
+openapi: 3.0.3
+info:
+  title: ERG-81 FE Integration API Skeleton
+  version: "0.1"
+  description: Minimal OpenAPI skeleton for ERG-81 FE integration. The generated Swagger files remain the canonical generated artifacts.
+servers:
+  - url: https://hoclieu.erg.edu.vn
+    description: Hoclieu production domain
+  - url: https://lms.erg.edu.local
+    description: LMS local domain
+  - url: https://elearning.erg.edu.local
+    description: Elearning local domain
+  - url: http://localhost:8080
+    description: Local development server
+tags:
+  - name: Hoclieu
+  - name: LMS Scopes
+  - name: LMS Units Classes
+  - name: LMS Dashboard
+  - name: LMS Question Bank
+  - name: LMS Quiz
+  - name: LMS Attempts
+  - name: Elearning Student
+paths:
+  /api/hoclieu/resources:
+    get:
+      tags: [Hoclieu]
+      summary: List Hoclieu resources
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/programSlug"
+        - $ref: "#/components/parameters/gradeId"
+        - $ref: "#/components/parameters/subjectId"
+        - $ref: "#/components/parameters/categoryId"
+        - $ref: "#/components/parameters/sectionId"
+        - $ref: "#/components/parameters/fileType"
+        - $ref: "#/components/parameters/query"
+        - $ref: "#/components/parameters/page"
+        - $ref: "#/components/parameters/limit"
+      responses:
+        "200":
+          description: Paginated Hoclieu resource cards
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+    post:
+      tags: [Hoclieu]
+      summary: Create Hoclieu resource
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HoclieuCreateResourceRequest"
+      responses:
+        "201":
+          description: Resource created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+  /api/hoclieu/resources/{resourceId}:
+    get:
+      tags: [Hoclieu]
+      summary: Get Hoclieu resource detail
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/resourceId"
+      responses:
+        "200":
+          description: Resource detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+    patch:
+      tags: [Hoclieu]
+      summary: Update Hoclieu resource
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/resourceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HoclieuUpdateResourceRequest"
+      responses:
+        "200":
+          description: Resource updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+  /api/hoclieu/assets:
+    post:
+      tags: [Hoclieu]
+      summary: Create Hoclieu asset
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HoclieuCreateAssetRequest"
+      responses:
+        "201":
+          description: Asset created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+  /api/hoclieu/assets/{assetId}/launch:
+    get:
+      tags: [Hoclieu]
+      summary: Launch asset viewer
+      description: Returns same-domain viewer/stream URLs. Direct Google iframes still expose upstream URLs; BE proxy/page conversion is required for stronger link hiding.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/assetId"
+      responses:
+        "200":
+          description: Launch contract
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+  /api/hoclieu/assets/{assetId}/pages:
+    get:
+      tags: [Hoclieu]
+      summary: Get converted viewer pages
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/assetId"
+        - $ref: "#/components/parameters/viewerToken"
+      responses:
+        "200":
+          description: Viewer pages
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+  /api/lms/scopes/me:
+    get:
+      tags: [LMS Scopes]
+      summary: Get LMS actor scopes
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Scope response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+  /api/lms/scopes/current:
+    put:
+      tags: [LMS Scopes]
+      summary: Set current LMS scope
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LmsUpdateScopeRequest"
+      responses:
+        "200":
+          description: Current scope persisted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+  /api/lms/education-units:
+    get:
+      tags: [LMS Units Classes]
+      summary: List schools and centers
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/keyword"
+        - $ref: "#/components/parameters/status"
+        - $ref: "#/components/parameters/unitType"
+        - $ref: "#/components/parameters/page"
+        - $ref: "#/components/parameters/limit"
+      responses:
+        "200":
+          description: Education unit list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+    post:
+      tags: [LMS Units Classes]
+      summary: Create school or center
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LmsEducationUnitRequest"
+      responses:
+        "201":
+          description: Education unit created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+  /api/lms/classes:
+    get:
+      tags: [LMS Units Classes]
+      summary: List classes
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/centerId"
+        - $ref: "#/components/parameters/unitId"
+        - $ref: "#/components/parameters/grade"
+        - $ref: "#/components/parameters/keyword"
+        - $ref: "#/components/parameters/status"
+        - $ref: "#/components/parameters/academicYear"
+        - $ref: "#/components/parameters/page"
+        - $ref: "#/components/parameters/limit"
+      responses:
+        "200":
+          description: Class list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+    post:
+      tags: [LMS Units Classes]
+      summary: Create class
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LmsCreateClassRequest"
+      responses:
+        "201":
+          description: Class created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+  /api/lms/dashboard/overview:
+    get:
+      tags: [LMS Dashboard]
+      summary: Get dashboard metrics
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/scopeType"
+        - $ref: "#/components/parameters/unitId"
+        - $ref: "#/components/parameters/centerId"
+        - $ref: "#/components/parameters/classId"
+        - $ref: "#/components/parameters/range"
+      responses:
+        "200":
+          description: Dashboard overview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+  /api/lms/dashboard/interventions:
+    get:
+      tags: [LMS Dashboard]
+      summary: List dashboard interventions
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/scopeType"
+        - $ref: "#/components/parameters/unitId"
+        - $ref: "#/components/parameters/centerId"
+        - $ref: "#/components/parameters/classId"
+        - $ref: "#/components/parameters/range"
+      responses:
+        "200":
+          description: Intervention list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+  /api/lms/questions:
+    get:
+      tags: [LMS Question Bank]
+      summary: List questions
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/contentScope"
+        - $ref: "#/components/parameters/centerId"
+        - $ref: "#/components/parameters/subjectId"
+        - $ref: "#/components/parameters/levelId"
+        - $ref: "#/components/parameters/topicId"
+        - $ref: "#/components/parameters/keyword"
+        - $ref: "#/components/parameters/questionKind"
+        - $ref: "#/components/parameters/cursor"
+        - $ref: "#/components/parameters/limit"
+      responses:
+        "200":
+          description: Question list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+    post:
+      tags: [LMS Question Bank]
+      summary: Create question
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LmsCreateQuestionRequest"
+      responses:
+        "201":
+          description: Question created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+  /api/lms/quizzes:
+    get:
+      tags: [LMS Quiz]
+      summary: List quizzes
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/contentScope"
+        - $ref: "#/components/parameters/centerId"
+        - $ref: "#/components/parameters/subjectId"
+        - $ref: "#/components/parameters/levelId"
+        - $ref: "#/components/parameters/quizKind"
+        - $ref: "#/components/parameters/keyword"
+        - $ref: "#/components/parameters/cursor"
+        - $ref: "#/components/parameters/limit"
+      responses:
+        "200":
+          description: Quiz list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+    post:
+      tags: [LMS Quiz]
+      summary: Create quiz
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LmsCreateQuizRequest"
+      responses:
+        "201":
+          description: Quiz created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+  /api/lms/quizzes/{quizId}/package:
+    get:
+      tags: [LMS Quiz]
+      summary: Get quiz runtime package
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/quizId"
+      responses:
+        "200":
+          description: Quiz package
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+  /api/lms/attempts:
+    post:
+      tags: [LMS Attempts]
+      summary: Start or reuse an active attempt
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LmsStartAttemptRequest"
+      responses:
+        "201":
+          description: Attempt started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+  /api/lms/attempts/{attemptId}/answers/{questionId}:
+    put:
+      tags: [LMS Attempts]
+      summary: Save answer by question id
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/attemptId"
+        - $ref: "#/components/parameters/questionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LmsSaveAnswerRequest"
+      responses:
+        "200":
+          description: Answer saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+  /api/lms/attempts/{attemptId}/submit:
+    post:
+      tags: [LMS Attempts]
+      summary: Submit attempt
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/attemptId"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LmsSubmitAttemptRequest"
+      responses:
+        "200":
+          description: Attempt submitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+  /api/elearning/dashboard:
+    get:
+      tags: [Elearning Student]
+      summary: Get student dashboard
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Student dashboard
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+  /api/elearning/assignments:
+    get:
+      tags: [Elearning Student]
+      summary: List student assignments
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Assignment list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+  /api/elearning/discussions:
+    get:
+      tags: [Elearning Student]
+      summary: List student discussions
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Discussion list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+    post:
+      tags: [Elearning Student]
+      summary: Create student discussion
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ElearningCreateDiscussionRequest"
+      responses:
+        "201":
+          description: Discussion created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    assetId:
+      name: assetId
+      in: path
+      required: true
+      schema: { type: string }
+    resourceId:
+      name: resourceId
+      in: path
+      required: true
+      schema: { type: string }
+    quizId:
+      name: quizId
+      in: path
+      required: true
+      schema: { type: string }
+    attemptId:
+      name: attemptId
+      in: path
+      required: true
+      schema: { type: string }
+    questionId:
+      name: questionId
+      in: path
+      required: true
+      schema: { type: string }
+    viewerToken:
+      name: token
+      in: query
+      schema: { type: string }
+    programSlug:
+      name: programSlug
+      in: query
+      schema: { type: string }
+    gradeId:
+      name: gradeId
+      in: query
+      schema: { type: string }
+    subjectId:
+      name: subjectId
+      in: query
+      schema: { type: string }
+    categoryId:
+      name: categoryId
+      in: query
+      schema: { type: string }
+    sectionId:
+      name: sectionId
+      in: query
+      schema: { type: string }
+    levelId:
+      name: levelId
+      in: query
+      schema: { type: string }
+    topicId:
+      name: topicId
+      in: query
+      schema: { type: string }
+    centerId:
+      name: centerId
+      in: query
+      schema: { type: string }
+    unitId:
+      name: unitId
+      in: query
+      schema: { type: string }
+    classId:
+      name: classId
+      in: query
+      schema: { type: string }
+    keyword:
+      name: keyword
+      in: query
+      schema: { type: string }
+    query:
+      name: query
+      in: query
+      schema: { type: string }
+    status:
+      name: status
+      in: query
+      schema: { type: string }
+    unitType:
+      name: type
+      in: query
+      schema:
+        type: string
+        enum: [school, center]
+    grade:
+      name: grade
+      in: query
+      schema: { type: string }
+    academicYear:
+      name: academicYear
+      in: query
+      schema: { type: string }
+    scopeType:
+      name: scopeType
+      in: query
+      schema:
+        type: string
+        enum: [global, center, class]
+    range:
+      name: range
+      in: query
+      schema: { type: string }
+    contentScope:
+      name: scope
+      in: query
+      schema:
+        type: string
+        enum: [global, center]
+    fileType:
+      name: fileType
+      in: query
+      schema:
+        $ref: "#/components/schemas/AssetFileType"
+    questionKind:
+      name: kind
+      in: query
+      schema: { type: string }
+    quizKind:
+      name: kind
+      in: query
+      schema: { type: string }
+    cursor:
+      name: cursor
+      in: query
+      schema: { type: string }
+    page:
+      name: page
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+  schemas:
+    Envelope:
+      type: object
+      required: [statusCode, message, errors, timestamp]
+      properties:
+        statusCode:
+          type: integer
+        message:
+          type: string
+        data:
+          nullable: true
+        errors:
+          nullable: true
+        timestamp:
+          type: string
+          format: date-time
+        path:
+          type: string
+        request_id:
+          type: string
+    AssetFileType:
+      type: string
+      enum: [PDF, PPTX, VIDEO, AUDIO, HTML5, LINK, QUIZ, ZIP, DOCX, XLSX, IMAGE]
+    ContentScope:
+      type: object
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [global, center]
+        centerId:
+          type: string
+    HoclieuCreateResourceRequest:
+      type: object
+      required: [title, programSlug, subjectId, categoryId, selectedFileType]
+      properties:
+        title: { type: string }
+        slug: { type: string }
+        subtitle: { type: string }
+        description: { type: string }
+        thumbnailUrl: { type: string }
+        programSlug: { type: string }
+        subjectId: { type: string }
+        gradeId: { type: string }
+        categoryId: { type: string }
+        sectionId: { type: string }
+        selectedFileType:
+          $ref: "#/components/schemas/AssetFileType"
+        priceType: { type: string }
+        canDownload: { type: boolean }
+        tags:
+          type: array
+          items: { type: string }
+    HoclieuUpdateResourceRequest:
+      allOf:
+        - $ref: "#/components/schemas/HoclieuCreateResourceRequest"
+    HoclieuCreateAssetRequest:
+      type: object
+      required: [resourceId, title, selectedFileType]
+      properties:
+        resourceId: { type: string }
+        title: { type: string }
+        selectedFileType:
+          $ref: "#/components/schemas/AssetFileType"
+        originalFileName: { type: string }
+        fileSizeBytes: { type: integer, format: int64 }
+        storageProvider: { type: string }
+        upstreamUrl: { type: string }
+        canDownload: { type: boolean }
+    LmsUpdateScopeRequest:
+      type: object
+      required: [level]
+      properties:
+        level:
+          type: string
+          enum: [global, center, class]
+        centerId: { type: string }
+        classId: { type: string }
+    LmsEducationUnitRequest:
+      type: object
+      required: [type, name, code]
+      properties:
+        type:
+          type: string
+          enum: [school, center]
+        name: { type: string }
+        code: { type: string }
+        address: { type: string }
+        managerUserId: { type: string }
+    LmsCreateClassRequest:
+      type: object
+      required: [centerId, name, grade]
+      properties:
+        centerId: { type: string }
+        name: { type: string }
+        grade: { type: string }
+        academicYear: { type: string }
+        homeroomTeacherId: { type: string }
+    LmsQuestionChoice:
+      type: object
+      properties:
+        id: { type: string }
+        label: { type: string }
+        correct: { type: boolean }
+    LmsCreateQuestionRequest:
+      type: object
+      required: [scope, subjectId, levelId, stem]
+      properties:
+        scope:
+          $ref: "#/components/schemas/ContentScope"
+        subjectId: { type: string }
+        levelId: { type: string }
+        topicId: { type: string }
+        kind: { type: string }
+        type: { type: string }
+        stem: { type: string }
+        choices:
+          type: array
+          items:
+            $ref: "#/components/schemas/LmsQuestionChoice"
+        answer: {}
+        metadata:
+          type: object
+          additionalProperties: true
+    LmsCreateQuizRequest:
+      type: object
+      required: [scope, title, kind, subjectId, levelId]
+      properties:
+        scope:
+          $ref: "#/components/schemas/ContentScope"
+        title: { type: string }
+        kind: { type: string }
+        subjectId: { type: string }
+        levelId: { type: string }
+        topicIds:
+          type: array
+          items: { type: string }
+        questionIds:
+          type: array
+          items: { type: string }
+        settings:
+          type: object
+          additionalProperties: true
+        themeId: { type: string }
+    LmsStartAttemptRequest:
+      type: object
+      required: [assignmentId, quizId, packageId, packageHash]
+      properties:
+        assignmentId: { type: string }
+        quizId: { type: string }
+        packageId: { type: string }
+        packageHash: { type: string }
+    LmsSaveAnswerRequest:
+      type: object
+      properties:
+        answer: {}
+        clientResult:
+          type: object
+          additionalProperties: true
+        answeredAt:
+          type: string
+          format: date-time
+    LmsSubmitAttemptRequest:
+      type: object
+      properties:
+        answers:
+          type: object
+          additionalProperties: true
+        submittedAt:
+          type: string
+          format: date-time
+    ElearningCreateDiscussionRequest:
+      type: object
+      required: [title, content]
+      properties:
+        title: { type: string }
+        content: { type: string }
+        assignmentId: { type: string }

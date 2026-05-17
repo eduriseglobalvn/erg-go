@@ -41,8 +41,9 @@ const credentials = new SharedArray("erg-lms-credentials", () => {
 });
 
 function buildScenarios() {
-  const scenarios = {
-    lms_exam_flow: {
+  const scenarios = {};
+  if (__ENV.ONLY_AUTH_LOGIN !== "true") {
+    scenarios.lms_exam_flow = {
       executor: "ramping-vus",
       exec: "studentExamFlow",
       stages: [
@@ -51,8 +52,8 @@ function buildScenarios() {
         { duration: __ENV.RAMP_DOWN_DURATION || "1m", target: 0 },
       ],
       gracefulRampDown: "60s",
-    },
-  };
+    };
+  }
   if (__ENV.LOGIN_EACH_ITERATION === "true" && credentials.length > 0) {
     scenarios.auth_login = {
       executor: "constant-vus",

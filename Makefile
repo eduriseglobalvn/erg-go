@@ -9,6 +9,10 @@ BIN_DIR     := bin
 SERVICES    := erg-server plugin-server db-migrate
 GO_PACKAGES := $(shell go list ./...)
 K6          ?= k6
+SECURITY_DIR ?= .gocache/security
+GOSEC        ?= gosec
+GITLEAKS     ?= gitleaks
+GOVULNCHECK  ?= govulncheck
 LOAD_BASE_URL ?= http://localhost:8080
 LOAD_RAMP_VUS ?= 10
 LOAD_STEADY_VUS ?= 10
@@ -16,6 +20,17 @@ LOAD_RAMP_DURATION ?= 2m
 LOAD_STEADY_DURATION ?= 5m
 LOAD_RAMP_DOWN_DURATION ?= 1m
 LOAD_QUESTIONS_PER_ATTEMPT ?= 5
+AUTH_VUS ?= 50
+AUTH_DURATION ?= 2m
+LOGIN_PATH ?= /api/lms/auth/login
+
+ifeq ($(OS),Windows_NT)
+DEV_PREFLIGHT := powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev-preflight.ps1
+MKDIR_SECURITY := powershell -NoProfile -Command "New-Item -ItemType Directory -Force '$(SECURITY_DIR)' | Out-Null"
+else
+DEV_PREFLIGHT := true
+MKDIR_SECURITY := mkdir -p $(SECURITY_DIR)
+endif
 
 # Default Go environment.
 export CGO_ENABLED ?= 0
@@ -24,7 +39,8 @@ export GOARCH      ?= $(shell go env GOHOSTARCH)
 
 .PHONY: all build test lint lint-fix clean docker-build docker-up docker-down \
         deploy migrate generate proto-install tidy fmt vet staticcheck \
-        coverage ci help load-smoke load-100k migrate/mongo-indexes \
+        coverage ci help dev dev-preflight load-smoke load-100k migrate/mongo-indexes \
+        security security-gosec security-secrets security-vuln load-auth-burst \
         plugin-build plugin-build/crawler-notif plugin-build/bot-notif \
         plugin-build/all plugin-list-tags
 
@@ -78,6 +94,21 @@ vet: ## Run go vet on all packages.
 
 staticcheck: ## Run staticcheck linter.
 	staticcheck $(GO_PACKAGES)
+
+# Security gates
+security: security-gosec security-secrets security-vuln ## Run local security gates matching CI.
+
+security-gosec: ## Run gosec and fail on medium/high confidence findings.
+	@$(MKDIR_SECURITY)
+	go run github.com/securego/gosec/v2/cmd/gosec@latest -severity medium -confidence medium -fmt sarif -out $(SECURITY_DIR)/gosec.sarif ./...
+
+security-secrets: ## Run gitleaks with redacted output.
+	@$(MKDIR_SECURITY)
+	go run github.com/zricethezav/gitleaks/v8@latest detect --source . --redact --report-format json --report-path $(SECURITY_DIR)/gitleaks.json --config .gitleaks.toml --exit-code 1
+
+security-vuln: ## Run govulncheck package-level vulnerability scan.
+	@$(MKDIR_SECURITY)
+	go run golang.org/x/vuln/cmd/govulncheck@latest -scan=package ./...
 
 # ── Proto generation (lib/ service clients) ─────────────────────────────────────
 # Services managed by this Makefile.
@@ -171,7 +202,10 @@ migrate/mongo/%: ## Run legacy MongoDB index migrations for a specific module.
 run/%: ## Run a service locally, e.g. make run/server (runs ./cmd/server).
 	go run ./cmd/$*
 
-dev: ## Run all services with hot reload (requires air or fresh).
+dev-preflight: ## Stop stale local hot-reload process before starting dev.
+	@$(DEV_PREFLIGHT)
+
+dev: dev-preflight ## Run all services with hot reload (requires air or fresh).
 	air -c .air.toml
 
 watch: ## Run tests on file changes (requires gotest).
@@ -192,6 +226,17 @@ load-smoke: ## Run a small LMS k6 smoke test against LOAD_BASE_URL.
 		-e STEADY_DURATION=$(LOAD_STEADY_DURATION) \
 		-e RAMP_DOWN_DURATION=$(LOAD_RAMP_DOWN_DURATION) \
 		-e QUESTIONS_PER_ATTEMPT=$(LOAD_QUESTIONS_PER_ATTEMPT)
+
+load-auth-burst: ## Run login burst load test using CREDENTIALS_FILE.
+	$(K6) run load/k6/lms_exam_flow.js \
+		-e BASE_URL=$(LOAD_BASE_URL) \
+		-e TENANT_ID="$(TENANT_ID)" \
+		-e CREDENTIALS_FILE="$(CREDENTIALS_FILE)" \
+		-e LOGIN_EACH_ITERATION="true" \
+		-e ONLY_AUTH_LOGIN="true" \
+		-e AUTH_VUS="$(AUTH_VUS)" \
+		-e AUTH_DURATION="$(AUTH_DURATION)" \
+		-e LOGIN_PATH="$(LOGIN_PATH)"
 
 load-100k: ## Run the LMS k6 scenario with this generator's share of the 100k target.
 	$(K6) run load/k6/lms_exam_flow.js \
@@ -224,7 +269,7 @@ rollback/%: ## Rollback a specific service to the previous version.
 	@kubectl rollout undo deployment/erg-$*
 
 # ── CI ────────────────────────────────────────────────────────────────────────
-ci: fmt tidy vet test lint ## Run full CI pipeline locally.
+ci: fmt tidy vet test lint security ## Run full CI pipeline locally.
 
 # ── Plugin / module composition (Phase 4, task3.md) ──────────────────────────────
 #

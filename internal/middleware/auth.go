@@ -24,9 +24,11 @@ func JWTMiddleware(validator *auth.JWTValidator, skipPaths ...string) gin.Handle
 	skipSet := buildSkipSet(skipPaths)
 
 	return func(c *gin.Context) {
-		// Nil validator = auth disabled (dev/test mode).
 		if validator == nil {
-			c.Next()
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+				"error":   "unauthorized",
+				"message": "JWT validator is not configured",
+			})
 			return
 		}
 
@@ -36,7 +38,18 @@ func JWTMiddleware(validator *auth.JWTValidator, skipPaths ...string) gin.Handle
 			return
 		}
 
-		authHeader := c.GetHeader("Authorization")
+		usesCookieAuth := auth.UsesCookieAuth(c.Request, "")
+		if usesCookieAuth && auth.UnsafeMethod(c.Request.Method) {
+			if err := auth.ValidateCSRF(c.Request); err != nil {
+				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+					"error":   "forbidden",
+					"message": "missing or invalid CSRF token",
+				})
+				return
+			}
+		}
+
+		authHeader := auth.AuthorizationHeaderFromRequest(c.Request, "")
 		if authHeader == "" {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
 				"error":   "unauthorized",
