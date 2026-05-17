@@ -169,30 +169,64 @@ type StudentListRequestDTO struct {
 }
 
 type CreateStudentRequestDTO struct {
-	FullName string     `json:"fullName" binding:"required"`
-	ClassID  string     `json:"classId" binding:"required"`
-	Birthday *time.Time `json:"birthday"`
-	Phone    string     `json:"phone"`
-	Note     string     `json:"note"`
+	FullName           string     `json:"fullName" binding:"required"`
+	ClassID            string     `json:"classId" binding:"required"`
+	StudentCode        string     `json:"studentCode"`
+	Email              string     `json:"email"`
+	Gender             string     `json:"gender"`
+	Birthday           *time.Time `json:"birthday"`
+	Phone              string     `json:"phone"`
+	Address            string     `json:"address"`
+	ParentName         string     `json:"parentName"`
+	ParentPhone        string     `json:"parentPhone"`
+	ParentEmail        string     `json:"parentEmail"`
+	ParentRelationship string     `json:"parentRelationship"`
+	EnrollmentDate     *time.Time `json:"enrollmentDate"`
+	Note               string     `json:"note"`
 }
 
 type UpdateStudentRequestDTO struct {
-	FullName *string    `json:"fullName"`
-	ClassID  *string    `json:"classId"`
-	Birthday *time.Time `json:"birthday"`
-	Phone    *string    `json:"phone"`
-	Note     *string    `json:"note"`
-	Status   *string    `json:"status"`
+	FullName           *string    `json:"fullName"`
+	ClassID            *string    `json:"classId"`
+	StudentCode        *string    `json:"studentCode"`
+	Email              *string    `json:"email"`
+	Gender             *string    `json:"gender"`
+	Birthday           *time.Time `json:"birthday"`
+	Phone              *string    `json:"phone"`
+	Address            *string    `json:"address"`
+	ParentName         *string    `json:"parentName"`
+	ParentPhone        *string    `json:"parentPhone"`
+	ParentEmail        *string    `json:"parentEmail"`
+	ParentRelationship *string    `json:"parentRelationship"`
+	EnrollmentDate     *time.Time `json:"enrollmentDate"`
+	Note               *string    `json:"note"`
+	Status             *string    `json:"status"`
 }
 
 type StudentListItemDTO struct {
 	ID                   string     `json:"id"`
+	StudentCode          string     `json:"studentCode,omitempty"`
 	FullName             string     `json:"fullName"`
 	Username             string     `json:"username"`
+	Email                string     `json:"email,omitempty"`
+	Gender               string     `json:"gender,omitempty"`
+	Birthday             *time.Time `json:"birthday,omitempty"`
+	Phone                string     `json:"phone,omitempty"`
+	Address              string     `json:"address,omitempty"`
+	ParentName           string     `json:"parentName,omitempty"`
+	ParentPhone          string     `json:"parentPhone,omitempty"`
+	ParentEmail          string     `json:"parentEmail,omitempty"`
+	ParentRelationship   string     `json:"parentRelationship,omitempty"`
+	EnrollmentDate       *time.Time `json:"enrollmentDate,omitempty"`
+	Note                 string     `json:"note,omitempty"`
 	CenterID             string     `json:"centerId"`
 	CenterName           string     `json:"centerName"`
+	CenterCode           string     `json:"centerCode,omitempty"`
+	CenterType           string     `json:"centerType,omitempty"`
 	ClassID              string     `json:"classId"`
 	ClassName            string     `json:"className"`
+	Grade                string     `json:"grade,omitempty"`
+	AcademicYear         string     `json:"academicYear,omitempty"`
 	Status               string     `json:"status"`
 	AverageScore         *float64   `json:"averageScore,omitempty"`
 	CompletedAssignments int        `json:"completedAssignments"`
@@ -235,17 +269,26 @@ type BulkActionResponseDTO struct {
 }
 
 type BulkCreateStudentAccountRowDTO struct {
-	RowID     string     `json:"rowId"`
-	RowNumber int        `json:"rowNumber"`
-	Included  *bool      `json:"included,omitempty"`
-	FullName  string     `json:"fullName" binding:"required"`
-	ClassID   string     `json:"classId"`
-	ClassName string     `json:"className"`
-	Username  string     `json:"username" binding:"required"`
-	Password  string     `json:"password"`
-	Birthday  *time.Time `json:"birthday"`
-	Phone     string     `json:"phone"`
-	Note      string     `json:"note"`
+	RowID              string     `json:"rowId"`
+	RowNumber          int        `json:"rowNumber"`
+	Included           *bool      `json:"included,omitempty"`
+	StudentCode        string     `json:"studentCode"`
+	FullName           string     `json:"fullName" binding:"required"`
+	ClassID            string     `json:"classId"`
+	ClassName          string     `json:"className"`
+	Username           string     `json:"username" binding:"required"`
+	Password           string     `json:"password"`
+	Email              string     `json:"email"`
+	Gender             string     `json:"gender"`
+	Birthday           *time.Time `json:"birthday"`
+	Phone              string     `json:"phone"`
+	Address            string     `json:"address"`
+	ParentName         string     `json:"parentName"`
+	ParentPhone        string     `json:"parentPhone"`
+	ParentEmail        string     `json:"parentEmail"`
+	ParentRelationship string     `json:"parentRelationship"`
+	EnrollmentDate     *time.Time `json:"enrollmentDate"`
+	Note               string     `json:"note"`
 }
 
 type BulkCreateStudentAccountsRequestDTO struct {
@@ -279,14 +322,23 @@ type GoogleSheetTabsResponseDTO struct {
 }
 
 type GoogleSheetPreviewMappingDTO struct {
-	RowNumber  string `json:"rowNumber"`
-	FamilyName string `json:"familyName"`
-	GivenName  string `json:"givenName"`
-	FullName   string `json:"fullName"`
-	ClassName  string `json:"className"`
-	Birthday   string `json:"birthday"`
-	Phone      string `json:"phone"`
-	Note       string `json:"note"`
+	RowNumber          string `json:"rowNumber"`
+	FamilyName         string `json:"familyName"`
+	GivenName          string `json:"givenName"`
+	StudentCode        string `json:"studentCode"`
+	FullName           string `json:"fullName"`
+	ClassName          string `json:"className"`
+	Email              string `json:"email"`
+	Gender             string `json:"gender"`
+	Birthday           string `json:"birthday"`
+	Phone              string `json:"phone"`
+	Address            string `json:"address"`
+	ParentName         string `json:"parentName"`
+	ParentPhone        string `json:"parentPhone"`
+	ParentEmail        string `json:"parentEmail"`
+	ParentRelationship string `json:"parentRelationship"`
+	EnrollmentDate     string `json:"enrollmentDate"`
+	Note               string `json:"note"`
 }
 
 type GoogleSheetPreviewRequestDTO struct {
@@ -299,15 +351,24 @@ type GoogleSheetPreviewRequestDTO struct {
 }
 
 type ParsedStudentRowDTO struct {
-	RowID     string     `json:"rowId"`
-	RowNumber int        `json:"rowNumber"`
-	FullName  string     `json:"fullName"`
-	ClassName string     `json:"className"`
-	Birthday  *time.Time `json:"birthday,omitempty"`
-	Phone     string     `json:"phone,omitempty"`
-	Note      string     `json:"note,omitempty"`
-	Status    string     `json:"status"`
-	Messages  []string   `json:"messages"`
+	RowID              string     `json:"rowId"`
+	RowNumber          int        `json:"rowNumber"`
+	StudentCode        string     `json:"studentCode,omitempty"`
+	FullName           string     `json:"fullName"`
+	ClassName          string     `json:"className"`
+	Email              string     `json:"email,omitempty"`
+	Gender             string     `json:"gender,omitempty"`
+	Birthday           *time.Time `json:"birthday,omitempty"`
+	Phone              string     `json:"phone,omitempty"`
+	Address            string     `json:"address,omitempty"`
+	ParentName         string     `json:"parentName,omitempty"`
+	ParentPhone        string     `json:"parentPhone,omitempty"`
+	ParentEmail        string     `json:"parentEmail,omitempty"`
+	ParentRelationship string     `json:"parentRelationship,omitempty"`
+	EnrollmentDate     *time.Time `json:"enrollmentDate,omitempty"`
+	Note               string     `json:"note,omitempty"`
+	Status             string     `json:"status"`
+	Messages           []string   `json:"messages"`
 }
 
 type GoogleSheetPreviewSummaryDTO struct {
@@ -328,13 +389,22 @@ type GoogleSheetPreviewResponseDTO struct {
 }
 
 type GoogleSheetCommitRowDTO struct {
-	RowID     string     `json:"rowId" binding:"required"`
-	Included  bool       `json:"included"`
-	FullName  string     `json:"fullName"`
-	ClassName string     `json:"className"`
-	Birthday  *time.Time `json:"birthday"`
-	Phone     string     `json:"phone"`
-	Note      string     `json:"note"`
+	RowID              string     `json:"rowId" binding:"required"`
+	Included           bool       `json:"included"`
+	StudentCode        string     `json:"studentCode"`
+	FullName           string     `json:"fullName"`
+	ClassName          string     `json:"className"`
+	Email              string     `json:"email"`
+	Gender             string     `json:"gender"`
+	Birthday           *time.Time `json:"birthday"`
+	Phone              string     `json:"phone"`
+	Address            string     `json:"address"`
+	ParentName         string     `json:"parentName"`
+	ParentPhone        string     `json:"parentPhone"`
+	ParentEmail        string     `json:"parentEmail"`
+	ParentRelationship string     `json:"parentRelationship"`
+	EnrollmentDate     *time.Time `json:"enrollmentDate"`
+	Note               string     `json:"note"`
 }
 
 type GoogleSheetCommitRequestDTO struct {

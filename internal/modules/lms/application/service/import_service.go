@@ -117,7 +117,13 @@ func (s *Service) CommitGoogleSheetImport(ctx context.Context, tenantID string, 
 			job.Errors = append(job.Errors, fmt.Sprintf("%s: %s", commitRow.RowID, err.Error()))
 			continue
 		}
-		username, duplicate, err := s.uniqueStudentUsername(ctx, tenantID, merged.FullName, class.Name)
+		profile, err := normalizeParsedStudentProfile(merged)
+		if err != nil {
+			job.Skipped++
+			job.Errors = append(job.Errors, fmt.Sprintf("%s: invalid student profile", commitRow.RowID))
+			continue
+		}
+		username, duplicate, err := s.uniqueStudentUsername(ctx, tenantID, profile.FullName, class.Name)
 		if err != nil {
 			return GoogleSheetCommitResponseDTO{}, err
 		}
@@ -128,17 +134,26 @@ func (s *Service) CommitGoogleSheetImport(ctx context.Context, tenantID string, 
 		if err != nil {
 			return GoogleSheetCommitResponseDTO{}, err
 		}
-		authUser, err := s.createStudentAuthUser(ctx, tenantID, merged.FullName, username, password, BulkCreateStudentAccountRowDTO{
-			RowID:     commitRow.RowID,
-			RowNumber: merged.RowNumber,
-			FullName:  merged.FullName,
-			ClassID:   req.ClassID,
-			ClassName: merged.ClassName,
-			Username:  username,
-			Password:  password,
-			Birthday:  merged.Birthday,
-			Phone:     merged.Phone,
-			Note:      merged.Note,
+		authUser, err := s.createStudentAuthUser(ctx, tenantID, profile.FullName, username, password, BulkCreateStudentAccountRowDTO{
+			RowID:              commitRow.RowID,
+			RowNumber:          merged.RowNumber,
+			StudentCode:        merged.StudentCode,
+			FullName:           profile.FullName,
+			ClassID:            req.ClassID,
+			ClassName:          merged.ClassName,
+			Username:           username,
+			Password:           password,
+			Email:              profile.Email,
+			Gender:             profile.Gender,
+			Birthday:           merged.Birthday,
+			Phone:              profile.Phone,
+			Address:            profile.Address,
+			ParentName:         profile.ParentName,
+			ParentPhone:        profile.ParentPhone,
+			ParentEmail:        profile.ParentEmail,
+			ParentRelationship: profile.ParentRelationship,
+			EnrollmentDate:     merged.EnrollmentDate,
+			Note:               profile.Note,
 		})
 		if err != nil {
 			if errors.Is(err, authrepo.ErrDuplicateEmail) {
@@ -150,20 +165,30 @@ func (s *Service) CommitGoogleSheetImport(ctx context.Context, tenantID string, 
 			return GoogleSheetCommitResponseDTO{}, err
 		}
 		student := &Student{
-			TenantID:   tenantID,
-			CenterID:   class.CenterID,
-			ClassID:    class.ID,
-			FullName:   merged.FullName,
-			Username:   username,
-			AuthUserID: authUser.ID.Hex(),
-			Birthday:   merged.Birthday,
-			Phone:      merged.Phone,
-			Note:       merged.Note,
-			Status:     statusActive,
-			CreatedAt:  time.Now().UTC(),
-			UpdatedAt:  time.Now().UTC(),
+			TenantID:           tenantID,
+			CenterID:           class.CenterID,
+			ClassID:            class.ID,
+			StudentCode:        profile.StudentCode,
+			FullName:           profile.FullName,
+			Username:           username,
+			AuthUserID:         authUser.ID.Hex(),
+			Email:              profile.Email,
+			Gender:             profile.Gender,
+			Birthday:           merged.Birthday,
+			Phone:              profile.Phone,
+			Address:            profile.Address,
+			ParentName:         profile.ParentName,
+			ParentPhone:        profile.ParentPhone,
+			ParentEmail:        profile.ParentEmail,
+			ParentRelationship: profile.ParentRelationship,
+			EnrollmentDate:     merged.EnrollmentDate,
+			Note:               profile.Note,
+			Status:             statusActive,
+			CreatedAt:          time.Now().UTC(),
+			UpdatedAt:          time.Now().UTC(),
 		}
 		if err := s.repo.CreateStudent(ctx, student); err != nil {
+			_ = s.authRepo.DeleteUserByID(ctx, authUser.ID)
 			job.Skipped++
 			job.Errors = append(job.Errors, fmt.Sprintf("%s: %s", commitRow.RowID, err.Error()))
 			continue
@@ -318,6 +343,15 @@ func parseStudentRows(values [][]string, mapping GoogleSheetPreviewMappingDTO) (
 	}
 	headers := values[0]
 	index := buildHeaderIndex(headers)
+	studentCodeCol := mappedColumn(mapping.StudentCode, index, "student code", "student id", "ma hoc sinh", "mhs")
+	emailCol := mappedColumn(mapping.Email, index, "email", "student email", "email hoc sinh")
+	genderCol := mappedColumn(mapping.Gender, index, "gender", "gioi tinh", "sex")
+	addressCol := mappedColumn(mapping.Address, index, "address", "dia chi")
+	parentNameCol := mappedColumn(mapping.ParentName, index, "parent name", "guardian name", "phu huynh", "ten phu huynh")
+	parentPhoneCol := mappedColumn(mapping.ParentPhone, index, "parent phone", "guardian phone", "sdt phu huynh")
+	parentEmailCol := mappedColumn(mapping.ParentEmail, index, "parent email", "guardian email", "email phu huynh")
+	parentRelationshipCol := mappedColumn(mapping.ParentRelationship, index, "parent relationship", "relationship", "quan he")
+	enrollmentDateCol := mappedColumn(mapping.EnrollmentDate, index, "enrollment date", "admission date", "ngay nhap hoc")
 	fullNameCol := mappedColumn(mapping.FullName, index, "full name", "fullname", "ho ten", "họ tên", "name")
 	familyCol := mappedColumn(mapping.FamilyName, index, "ho", "họ", "family name")
 	givenCol := mappedColumn(mapping.GivenName, index, "ten", "tên", "given name")
@@ -340,15 +374,24 @@ func parseStudentRows(values [][]string, mapping GoogleSheetPreviewMappingDTO) (
 			fullName = strings.TrimSpace(cell(raw, familyCol) + " " + cell(raw, givenCol))
 		}
 		row := ParsedStudentRow{
-			RowID:     fmt.Sprintf("row-%d", i+1),
-			RowNumber: i + 1,
-			FullName:  fullName,
-			ClassName: cell(raw, classCol),
-			Birthday:  parseDate(cell(raw, birthdayCol)),
-			Phone:     cell(raw, phoneCol),
-			Note:      cell(raw, noteCol),
-			Status:    "valid",
-			Messages:  []string{},
+			RowID:              fmt.Sprintf("row-%d", i+1),
+			RowNumber:          i + 1,
+			StudentCode:        cell(raw, studentCodeCol),
+			FullName:           fullName,
+			ClassName:          cell(raw, classCol),
+			Email:              cell(raw, emailCol),
+			Gender:             cell(raw, genderCol),
+			Birthday:           parseDate(cell(raw, birthdayCol)),
+			Phone:              cell(raw, phoneCol),
+			Address:            cell(raw, addressCol),
+			ParentName:         cell(raw, parentNameCol),
+			ParentPhone:        cell(raw, parentPhoneCol),
+			ParentEmail:        cell(raw, parentEmailCol),
+			ParentRelationship: cell(raw, parentRelationshipCol),
+			EnrollmentDate:     parseDate(cell(raw, enrollmentDateCol)),
+			Note:               cell(raw, noteCol),
+			Status:             "valid",
+			Messages:           []string{},
 		}
 		if row.FullName == "" {
 			row.Status = "error"
@@ -437,21 +480,48 @@ func previewToResponse(preview ImportPreview, warnings []string) GoogleSheetPrev
 }
 
 func parsedRowToDTO(row ParsedStudentRow) ParsedStudentRowDTO {
-	return ParsedStudentRowDTO{RowID: row.RowID, RowNumber: row.RowNumber, FullName: row.FullName, ClassName: row.ClassName, Birthday: row.Birthday, Phone: row.Phone, Note: row.Note, Status: row.Status, Messages: row.Messages}
+	return ParsedStudentRowDTO{RowID: row.RowID, RowNumber: row.RowNumber, StudentCode: row.StudentCode, FullName: row.FullName, ClassName: row.ClassName, Email: row.Email, Gender: row.Gender, Birthday: row.Birthday, Phone: row.Phone, Address: row.Address, ParentName: row.ParentName, ParentPhone: row.ParentPhone, ParentEmail: row.ParentEmail, ParentRelationship: row.ParentRelationship, EnrollmentDate: row.EnrollmentDate, Note: row.Note, Status: row.Status, Messages: row.Messages}
 }
 
 func mergeCommitRow(parsed ParsedStudentRow, commit GoogleSheetCommitRowDTO) ParsedStudentRow {
+	if commit.StudentCode != "" {
+		parsed.StudentCode = commit.StudentCode
+	}
 	if commit.FullName != "" {
 		parsed.FullName = commit.FullName
 	}
 	if commit.ClassName != "" {
 		parsed.ClassName = commit.ClassName
 	}
+	if commit.Email != "" {
+		parsed.Email = commit.Email
+	}
+	if commit.Gender != "" {
+		parsed.Gender = commit.Gender
+	}
 	if commit.Birthday != nil {
 		parsed.Birthday = commit.Birthday
 	}
 	if commit.Phone != "" {
 		parsed.Phone = commit.Phone
+	}
+	if commit.Address != "" {
+		parsed.Address = commit.Address
+	}
+	if commit.ParentName != "" {
+		parsed.ParentName = commit.ParentName
+	}
+	if commit.ParentPhone != "" {
+		parsed.ParentPhone = commit.ParentPhone
+	}
+	if commit.ParentEmail != "" {
+		parsed.ParentEmail = commit.ParentEmail
+	}
+	if commit.ParentRelationship != "" {
+		parsed.ParentRelationship = commit.ParentRelationship
+	}
+	if commit.EnrollmentDate != nil {
+		parsed.EnrollmentDate = commit.EnrollmentDate
 	}
 	if commit.Note != "" {
 		parsed.Note = commit.Note

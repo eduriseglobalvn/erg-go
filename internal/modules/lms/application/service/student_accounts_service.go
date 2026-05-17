@@ -68,7 +68,14 @@ func (s *Service) BulkCreateStudentAccounts(ctx context.Context, tenantID string
 				return BulkCreateStudentAccountsResponseDTO{}, err
 			}
 		}
-		if fullName == "" || username == "" {
+		row.FullName = fullName
+		profile, err := normalizeBulkStudentProfile(row)
+		if err != nil {
+			result.Skipped++
+			result.FailedItems = append(result.FailedItems, BulkActionFailedItemDTO{ID: rowID, Code: "invalid_profile", Message: "invalid student profile fields"})
+			continue
+		}
+		if profile.FullName == "" || username == "" {
 			result.Skipped++
 			result.FailedItems = append(result.FailedItems, BulkActionFailedItemDTO{ID: rowID, Code: "invalid_row", Message: "missing fullName or username"})
 			continue
@@ -85,7 +92,7 @@ func (s *Service) BulkCreateStudentAccounts(ctx context.Context, tenantID string
 			continue
 		}
 		usernamesInRequest[username] = rowID
-		if err := validateStudentPassword(password, username, fullName); err != nil {
+		if err := validateStudentPassword(password, username, profile.FullName); err != nil {
 			result.Skipped++
 			result.FailedItems = append(result.FailedItems, BulkActionFailedItemDTO{ID: rowID, Code: "weak_password", Message: "password must be 8-128 characters and cannot contain username or student name"})
 			continue
@@ -109,7 +116,8 @@ func (s *Service) BulkCreateStudentAccounts(ctx context.Context, tenantID string
 			continue
 		}
 
-		authUser, err := s.createStudentAuthUser(ctx, tenantID, fullName, username, password, row)
+		row.Phone = profile.Phone
+		authUser, err := s.createStudentAuthUser(ctx, tenantID, profile.FullName, username, password, row)
 		if err != nil {
 			if errors.Is(err, authrepo.ErrDuplicateEmail) {
 				result.Duplicates++
@@ -121,18 +129,27 @@ func (s *Service) BulkCreateStudentAccounts(ctx context.Context, tenantID string
 		}
 
 		student := &Student{
-			TenantID:   tenantID,
-			CenterID:   class.CenterID,
-			ClassID:    class.ID,
-			FullName:   fullName,
-			Username:   username,
-			AuthUserID: authUser.ID.Hex(),
-			Birthday:   row.Birthday,
-			Phone:      row.Phone,
-			Note:       row.Note,
-			Status:     statusActive,
-			CreatedAt:  time.Now().UTC(),
-			UpdatedAt:  time.Now().UTC(),
+			TenantID:           tenantID,
+			CenterID:           class.CenterID,
+			ClassID:            class.ID,
+			StudentCode:        profile.StudentCode,
+			FullName:           profile.FullName,
+			Username:           username,
+			AuthUserID:         authUser.ID.Hex(),
+			Email:              profile.Email,
+			Gender:             profile.Gender,
+			Birthday:           row.Birthday,
+			Phone:              profile.Phone,
+			Address:            profile.Address,
+			ParentName:         profile.ParentName,
+			ParentPhone:        profile.ParentPhone,
+			ParentEmail:        profile.ParentEmail,
+			ParentRelationship: profile.ParentRelationship,
+			EnrollmentDate:     row.EnrollmentDate,
+			Note:               profile.Note,
+			Status:             statusActive,
+			CreatedAt:          time.Now().UTC(),
+			UpdatedAt:          time.Now().UTC(),
 		}
 		if err := s.repo.CreateStudent(ctx, student); err != nil {
 			_ = s.authRepo.DeleteUserByID(ctx, authUser.ID)

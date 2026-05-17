@@ -363,7 +363,14 @@ func (m *memoryStore) listStudents(tenantID string, req StudentListRequestDTO, a
 		if req.Status != "" && student.Status != req.Status {
 			continue
 		}
-		if req.Keyword != "" && !containsFold(student.FullName, req.Keyword) && !containsFold(student.Username, req.Keyword) && !containsFold(student.Phone, req.Keyword) {
+		if req.Keyword != "" &&
+			!containsFold(student.StudentCode, req.Keyword) &&
+			!containsFold(student.FullName, req.Keyword) &&
+			!containsFold(student.Username, req.Keyword) &&
+			!containsFold(student.Email, req.Keyword) &&
+			!containsFold(student.Phone, req.Keyword) &&
+			!containsFold(student.ParentName, req.Keyword) &&
+			!containsFold(student.ParentPhone, req.Keyword) {
 			continue
 		}
 		items = append(items, student)
@@ -404,11 +411,38 @@ func (m *memoryStore) updateStudent(tenantID, id string, update bson.M) (*Studen
 		if v, ok := update["full_name"].(string); ok {
 			m.students[i].FullName = v
 		}
+		if v, ok := update["student_code"].(string); ok {
+			m.students[i].StudentCode = v
+		}
+		if v, ok := update["email"].(string); ok {
+			m.students[i].Email = v
+		}
+		if v, ok := update["gender"].(string); ok {
+			m.students[i].Gender = v
+		}
 		if v, ok := update["birthday"].(time.Time); ok {
 			m.students[i].Birthday = &v
 		}
 		if v, ok := update["phone"].(string); ok {
 			m.students[i].Phone = v
+		}
+		if v, ok := update["address"].(string); ok {
+			m.students[i].Address = v
+		}
+		if v, ok := update["parent_name"].(string); ok {
+			m.students[i].ParentName = v
+		}
+		if v, ok := update["parent_phone"].(string); ok {
+			m.students[i].ParentPhone = v
+		}
+		if v, ok := update["parent_email"].(string); ok {
+			m.students[i].ParentEmail = v
+		}
+		if v, ok := update["parent_relationship"].(string); ok {
+			m.students[i].ParentRelationship = v
+		}
+		if v, ok := update["enrollment_date"].(time.Time); ok {
+			m.students[i].EnrollmentDate = &v
 		}
 		if v, ok := update["note"].(string); ok {
 			m.students[i].Note = v

@@ -73,20 +73,29 @@ type Class struct {
 }
 
 type Student struct {
-	ID         bson.ObjectID  `bson:"_id,omitempty"`
-	TenantID   string         `bson:"tenant_id"`
-	CenterID   bson.ObjectID  `bson:"center_id"`
-	ClassID    bson.ObjectID  `bson:"class_id"`
-	FullName   string         `bson:"full_name"`
-	Username   string         `bson:"username"`
-	AuthUserID string         `bson:"auth_user_id,omitempty"`
-	Birthday   *time.Time     `bson:"birthday,omitempty"`
-	Phone      string         `bson:"phone,omitempty"`
-	Note       string         `bson:"note,omitempty"`
-	Status     string         `bson:"status"`
-	Metrics    StudentMetrics `bson:"metrics"`
-	CreatedAt  time.Time      `bson:"created_at"`
-	UpdatedAt  time.Time      `bson:"updated_at"`
+	ID                 bson.ObjectID  `bson:"_id,omitempty"`
+	TenantID           string         `bson:"tenant_id"`
+	CenterID           bson.ObjectID  `bson:"center_id"`
+	ClassID            bson.ObjectID  `bson:"class_id"`
+	StudentCode        string         `bson:"student_code,omitempty"`
+	FullName           string         `bson:"full_name"`
+	Username           string         `bson:"username"`
+	AuthUserID         string         `bson:"auth_user_id,omitempty"`
+	Email              string         `bson:"email,omitempty"`
+	Gender             string         `bson:"gender,omitempty"`
+	Birthday           *time.Time     `bson:"birthday,omitempty"`
+	Phone              string         `bson:"phone,omitempty"`
+	Address            string         `bson:"address,omitempty"`
+	ParentName         string         `bson:"parent_name,omitempty"`
+	ParentPhone        string         `bson:"parent_phone,omitempty"`
+	ParentEmail        string         `bson:"parent_email,omitempty"`
+	ParentRelationship string         `bson:"parent_relationship,omitempty"`
+	EnrollmentDate     *time.Time     `bson:"enrollment_date,omitempty"`
+	Note               string         `bson:"note,omitempty"`
+	Status             string         `bson:"status"`
+	Metrics            StudentMetrics `bson:"metrics"`
+	CreatedAt          time.Time      `bson:"created_at"`
+	UpdatedAt          time.Time      `bson:"updated_at"`
 }
 
 type StudentMetrics struct {
@@ -117,15 +126,24 @@ type ImportPreview struct {
 }
 
 type ParsedStudentRow struct {
-	RowID     string     `bson:"row_id"`
-	RowNumber int        `bson:"row_number"`
-	FullName  string     `bson:"full_name"`
-	ClassName string     `bson:"class_name"`
-	Birthday  *time.Time `bson:"birthday,omitempty"`
-	Phone     string     `bson:"phone,omitempty"`
-	Note      string     `bson:"note,omitempty"`
-	Status    string     `bson:"status"`
-	Messages  []string   `bson:"messages"`
+	RowID              string     `bson:"row_id"`
+	RowNumber          int        `bson:"row_number"`
+	StudentCode        string     `bson:"student_code,omitempty"`
+	FullName           string     `bson:"full_name"`
+	ClassName          string     `bson:"class_name"`
+	Email              string     `bson:"email,omitempty"`
+	Gender             string     `bson:"gender,omitempty"`
+	Birthday           *time.Time `bson:"birthday,omitempty"`
+	Phone              string     `bson:"phone,omitempty"`
+	Address            string     `bson:"address,omitempty"`
+	ParentName         string     `bson:"parent_name,omitempty"`
+	ParentPhone        string     `bson:"parent_phone,omitempty"`
+	ParentEmail        string     `bson:"parent_email,omitempty"`
+	ParentRelationship string     `bson:"parent_relationship,omitempty"`
+	EnrollmentDate     *time.Time `bson:"enrollment_date,omitempty"`
+	Note               string     `bson:"note,omitempty"`
+	Status             string     `bson:"status"`
+	Messages           []string   `bson:"messages"`
 }
 
 type ImportJob struct {

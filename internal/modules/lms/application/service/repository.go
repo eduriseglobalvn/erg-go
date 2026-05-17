@@ -439,9 +439,13 @@ func (r *Repository) ListStudents(ctx context.Context, tenantID string, req Stud
 	}
 	if req.Keyword != "" {
 		filter["$or"] = []bson.M{
+			{"student_code": bson.M{"$regex": req.Keyword, "$options": "i"}},
 			{"full_name": bson.M{"$regex": req.Keyword, "$options": "i"}},
 			{"username": bson.M{"$regex": req.Keyword, "$options": "i"}},
+			{"email": bson.M{"$regex": req.Keyword, "$options": "i"}},
 			{"phone": bson.M{"$regex": req.Keyword, "$options": "i"}},
+			{"parent_name": bson.M{"$regex": req.Keyword, "$options": "i"}},
+			{"parent_phone": bson.M{"$regex": req.Keyword, "$options": "i"}},
 		}
 	}
 	limit := req.Limit
@@ -1007,6 +1011,26 @@ func (r *Repository) EnsureIndexes(ctx context.Context) error {
 				{Key: "full_name", Value: 1},
 			},
 			Options: options.Index().SetName("idx_lms_student_class_status"),
+		},
+		{
+			Keys: bson.D{
+				{Key: "tenant_id", Value: 1},
+				{Key: "student_code", Value: 1},
+			},
+			Options: options.Index().
+				SetName("idx_lms_student_unique_student_code").
+				SetUnique(true).
+				SetPartialFilterExpression(bson.M{"student_code": bson.M{"$exists": true, "$ne": ""}}),
+		},
+		{
+			Keys: bson.D{
+				{Key: "tenant_id", Value: 1},
+				{Key: "center_id", Value: 1},
+				{Key: "class_id", Value: 1},
+				{Key: "status", Value: 1},
+				{Key: "student_code", Value: 1},
+			},
+			Options: options.Index().SetName("idx_lms_student_roster_export"),
 		},
 		{
 			Keys: bson.D{

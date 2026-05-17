@@ -26,6 +26,7 @@ var (
 	errInvalidFieldKey          = errors.New("INVALID_FIELD_KEY")
 	errInvalidQuestionKind      = errors.New("INVALID_QUESTION_KIND")
 	errInvalidEducationUnitType = errors.New("INVALID_EDUCATION_UNIT_TYPE")
+	errInvalidStudentProfile    = errors.New("INVALID_STUDENT_PROFILE")
 )
 
 type Actor struct {
@@ -418,6 +419,10 @@ func (s *Service) GetStudent(ctx context.Context, tenantID string, actor Actor, 
 }
 
 func (s *Service) CreateStudent(ctx context.Context, tenantID string, actor Actor, req CreateStudentRequestDTO) (StudentResponseDTO, error) {
+	profile, err := normalizeCreateStudentProfile(req)
+	if err != nil {
+		return StudentResponseDTO{}, err
+	}
 	class, err := s.repo.GetClass(ctx, tenantID, req.ClassID)
 	if err != nil {
 		return StudentResponseDTO{}, err
@@ -433,14 +438,23 @@ func (s *Service) CreateStudent(ctx context.Context, tenantID string, actor Acto
 		return StudentResponseDTO{}, err
 	}
 	student := &Student{
-		TenantID: tenantID,
-		CenterID: class.CenterID,
-		ClassID:  class.ID,
-		FullName: req.FullName,
-		Username: usernameFromName(req.FullName),
-		Birthday: req.Birthday,
-		Phone:    req.Phone,
-		Note:     req.Note,
+		TenantID:           tenantID,
+		CenterID:           class.CenterID,
+		ClassID:            class.ID,
+		StudentCode:        profile.StudentCode,
+		FullName:           profile.FullName,
+		Username:           usernameFromName(profile.FullName),
+		Email:              profile.Email,
+		Gender:             profile.Gender,
+		Birthday:           req.Birthday,
+		Phone:              profile.Phone,
+		Address:            profile.Address,
+		ParentName:         profile.ParentName,
+		ParentPhone:        profile.ParentPhone,
+		ParentEmail:        profile.ParentEmail,
+		ParentRelationship: profile.ParentRelationship,
+		EnrollmentDate:     req.EnrollmentDate,
+		Note:               profile.Note,
 	}
 	if err := s.repo.CreateStudent(ctx, student); err != nil {
 		return StudentResponseDTO{}, err
@@ -459,18 +473,73 @@ func (s *Service) UpdateStudent(ctx context.Context, tenantID string, actor Acto
 	if !s.canAccessStudent(ctx, tenantID, actor, *student) {
 		return StudentResponseDTO{}, errScopeForbidden
 	}
+	profile := normalizedStudentProfile{
+		StudentCode:        student.StudentCode,
+		FullName:           student.FullName,
+		Email:              student.Email,
+		Gender:             student.Gender,
+		Phone:              student.Phone,
+		Address:            student.Address,
+		ParentName:         student.ParentName,
+		ParentPhone:        student.ParentPhone,
+		ParentEmail:        student.ParentEmail,
+		ParentRelationship: student.ParentRelationship,
+		Note:               student.Note,
+	}
+	if req.StudentCode != nil {
+		profile.StudentCode = *req.StudentCode
+	}
 	update := bson.M{}
 	if req.FullName != nil {
-		update["full_name"] = *req.FullName
+		profile.FullName = *req.FullName
 	}
+	if req.Email != nil {
+		profile.Email = *req.Email
+	}
+	if req.Gender != nil {
+		profile.Gender = *req.Gender
+	}
+	if req.Phone != nil {
+		profile.Phone = *req.Phone
+	}
+	if req.Address != nil {
+		profile.Address = *req.Address
+	}
+	if req.ParentName != nil {
+		profile.ParentName = *req.ParentName
+	}
+	if req.ParentPhone != nil {
+		profile.ParentPhone = *req.ParentPhone
+	}
+	if req.ParentEmail != nil {
+		profile.ParentEmail = *req.ParentEmail
+	}
+	if req.ParentRelationship != nil {
+		profile.ParentRelationship = *req.ParentRelationship
+	}
+	if req.Note != nil {
+		profile.Note = *req.Note
+	}
+	normalizedProfile, err := normalizeStudentProfile(profile)
+	if err != nil {
+		return StudentResponseDTO{}, err
+	}
+	update["student_code"] = normalizedProfile.StudentCode
+	update["full_name"] = normalizedProfile.FullName
+	update["email"] = normalizedProfile.Email
+	update["gender"] = normalizedProfile.Gender
+	update["phone"] = normalizedProfile.Phone
+	update["address"] = normalizedProfile.Address
+	update["parent_name"] = normalizedProfile.ParentName
+	update["parent_phone"] = normalizedProfile.ParentPhone
+	update["parent_email"] = normalizedProfile.ParentEmail
+	update["parent_relationship"] = normalizedProfile.ParentRelationship
+	update["note"] = normalizedProfile.Note
 	if req.Birthday != nil {
 		update["birthday"] = *req.Birthday
 	}
-	if req.Phone != nil {
-		update["phone"] = *req.Phone
-	}
-	if req.Note != nil {
-		update["note"] = *req.Note
+	if req.EnrollmentDate != nil {
+		update["enrollment_date"] = *req.EnrollmentDate
 	}
 	if req.Status != nil {
 		update["status"] = *req.Status
@@ -666,29 +735,47 @@ func (s *Service) canAccessStudent(ctx context.Context, tenantID string, actor A
 
 func (s *Service) studentsToDTO(ctx context.Context, tenantID string, students []Student) []StudentListItemDTO {
 	items := make([]StudentListItemDTO, 0, len(students))
-	centerNames := map[string]string{}
-	classNames := map[string]string{}
+	centers := map[string]Center{}
+	classes := map[string]Class{}
 	for _, student := range students {
 		centerID := student.CenterID.Hex()
 		classID := student.ClassID.Hex()
-		if _, ok := centerNames[centerID]; !ok {
+		if _, ok := centers[centerID]; !ok {
 			if center, _ := s.repo.GetCenter(ctx, tenantID, centerID); center != nil {
-				centerNames[centerID] = center.Name
+				centers[centerID] = *center
 			}
 		}
-		if _, ok := classNames[classID]; !ok {
+		if _, ok := classes[classID]; !ok {
 			if class, _ := s.repo.GetClass(ctx, tenantID, classID); class != nil {
-				classNames[classID] = class.Name
+				classes[classID] = *class
 			}
 		}
+		center := centers[centerID]
+		class := classes[classID]
 		items = append(items, StudentListItemDTO{
 			ID:                   student.ID.Hex(),
+			StudentCode:          student.StudentCode,
 			FullName:             student.FullName,
 			Username:             student.Username,
+			Email:                student.Email,
+			Gender:               student.Gender,
+			Birthday:             student.Birthday,
+			Phone:                student.Phone,
+			Address:              student.Address,
+			ParentName:           student.ParentName,
+			ParentPhone:          student.ParentPhone,
+			ParentEmail:          student.ParentEmail,
+			ParentRelationship:   student.ParentRelationship,
+			EnrollmentDate:       student.EnrollmentDate,
+			Note:                 student.Note,
 			CenterID:             centerID,
-			CenterName:           centerNames[centerID],
+			CenterName:           center.Name,
+			CenterCode:           center.Code,
+			CenterType:           centerType(center),
 			ClassID:              classID,
-			ClassName:            classNames[classID],
+			ClassName:            class.Name,
+			Grade:                class.Grade,
+			AcademicYear:         class.AcademicYear,
 			Status:               student.Status,
 			AverageScore:         student.Metrics.AverageScore,
 			CompletedAssignments: student.Metrics.CompletedAssignments,
@@ -984,6 +1071,8 @@ func writeServiceError(statusCode func(int, string, string), err error) {
 		statusCode(http.StatusBadRequest, "INVALID_QUESTION_KIND", "invalid question kind")
 	case errors.Is(err, errInvalidEducationUnitType):
 		statusCode(http.StatusBadRequest, "INVALID_EDUCATION_UNIT_TYPE", "education unit type must be school or center")
+	case errors.Is(err, errInvalidStudentProfile):
+		statusCode(http.StatusBadRequest, "INVALID_STUDENT_PROFILE", "invalid student profile fields")
 	case errors.Is(err, errInvalidStudentAccountPayload):
 		statusCode(http.StatusBadRequest, "INVALID_STUDENT_ACCOUNT_PAYLOAD", "invalid student account payload")
 	case errors.Is(err, errInvalidAccessPolicy):
