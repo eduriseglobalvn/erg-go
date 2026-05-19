@@ -21,8 +21,8 @@ func TestSeedDefaultEducationUnitsIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list centers: %v", err)
 	}
-	if total != 5 || len(items) != 5 {
-		t.Fatalf("seeded centers total=%d len=%d, want 5", total, len(items))
+	if total != 6 || len(items) != 6 {
+		t.Fatalf("seeded centers total=%d len=%d, want 6", total, len(items))
 	}
 
 	assertSeededUnit(t, items, "ERG-SYSTEM", educationUnitTypeSystem, "Hệ thống ERG")
@@ -30,6 +30,7 @@ func TestSeedDefaultEducationUnitsIsIdempotent(t *testing.T) {
 	assertSeededUnit(t, items, "ERG-BINH-PHU", educationUnitTypeCenter, "ERG Bình Phú")
 	assertSeededUnit(t, items, "THCS-TCD", educationUnitTypeSchool, "THCS TRƯƠNG CÔNG ĐỊNH")
 	assertSeededUnit(t, items, "THCS-CAT-LAI", educationUnitTypeSchool, "THCS CÁT LÁI")
+	assertSeededUnit(t, items, "THCS-BINH-AN", educationUnitTypeSchool, "THCS BÌNH AN")
 }
 
 func assertSeededUnit(t *testing.T, items []Center, code, unitType, name string) {

@@ -50,6 +50,15 @@ var defaultEducationUnits = []Center{
 		Address:  "TP. Hồ Chí Minh",
 		Status:   statusActive,
 	},
+	{
+		ID:       mustSeedObjectID("665000000000000000000104"),
+		Type:     educationUnitTypeSchool,
+		Name:     "THCS BÌNH AN",
+		Code:     "THCS-BINH-AN",
+		ParentID: mustSeedObjectID("665000000000000000000101"),
+		Address:  "TP. Hồ Chí Minh",
+		Status:   statusActive,
+	},
 }
 
 func (s *Service) SeedDefaultEducationUnits(ctx context.Context, tenantID string) error {
@@ -59,13 +68,21 @@ func (s *Service) SeedDefaultEducationUnits(ctx context.Context, tenantID string
 	if tenantID == "" {
 		tenantID = "default"
 	}
+	var binhPhuID bson.ObjectID
 	for _, unit := range defaultEducationUnits {
 		unit.TenantID = tenantID
 		if unit.ID == bson.NilObjectID {
 			unit.ID = bson.NewObjectID()
 		}
-		if _, err := s.repo.UpsertCenterByCode(ctx, unit); err != nil {
+		if unit.Type == educationUnitTypeSchool && !binhPhuID.IsZero() {
+			unit.ParentID = binhPhuID
+		}
+		upserted, err := s.repo.UpsertCenterByCode(ctx, unit)
+		if err != nil {
 			return fmt.Errorf("lms seed default education unit %s: %w", unit.Code, err)
+		}
+		if upserted != nil && unit.Code == "ERG-BINH-PHU" {
+			binhPhuID = upserted.ID
 		}
 	}
 	return nil

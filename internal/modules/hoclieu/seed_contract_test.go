@@ -11,11 +11,9 @@ func TestSeedIncludesERG81ProgramsAndFileTypes(t *testing.T) {
 	ctx := context.Background()
 
 	wantPrograms := map[string]bool{
-		"global-success":       false,
 		"giao-duc-stem":        false,
 		"ic3-digital-literacy": false,
 		"mos-office-skills":    false,
-		"tin-hoc-pho-thong":    false,
 	}
 	for _, program := range svc.Programs(ctx) {
 		if _, ok := wantPrograms[program.Slug]; ok {
@@ -29,12 +27,8 @@ func TestSeedIncludesERG81ProgramsAndFileTypes(t *testing.T) {
 	}
 
 	wantFileTypes := map[AssetFileType]bool{
-		AssetFileTypePDF:   false,
-		AssetFileTypePPTX:  false,
-		AssetFileTypeVideo: false,
-		AssetFileTypeAudio: false,
-		AssetFileTypeQuiz:  false,
-		AssetFileTypeLink:  false,
+		AssetFileTypePPTX: false,
+		AssetFileTypeQuiz: false,
 	}
 	items, total := svc.ListResources(ctx, ListResourceParams{Limit: 100})
 	if total < int64(len(wantFileTypes)) {
@@ -62,10 +56,8 @@ func TestSeedResourceListHappyPathForProgramFilters(t *testing.T) {
 		programSlug string
 		fileType    AssetFileType
 	}{
-		{name: "global success audio", programSlug: "global-success", fileType: AssetFileTypeAudio},
-		{name: "stem video", programSlug: "giao-duc-stem", fileType: AssetFileTypeVideo},
+		{name: "ic3 lecture", programSlug: "ic3-digital-literacy", fileType: AssetFileTypePPTX},
 		{name: "ic3 quiz", programSlug: "ic3-digital-literacy", fileType: AssetFileTypeQuiz},
-		{name: "tin hoc link", programSlug: "tin-hoc-pho-thong", fileType: AssetFileTypeLink},
 	}
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
@@ -143,7 +135,7 @@ func TestSeedContentModelRelationshipsAreConsistent(t *testing.T) {
 		if topic.BookSeriesID != "" && !bookSeries[topic.BookSeriesID] {
 			t.Fatalf("topic %s points to missing book series %s", topic.ID, topic.BookSeriesID)
 		}
-		if topic.ParentID != "" && !topics[topic.ParentID] {
+		if topic.ParentID != "" && !topics[topic.ParentID] && !categories[topic.ParentID] {
 			t.Fatalf("topic %s points to missing parent %s", topic.ID, topic.ParentID)
 		}
 	}
@@ -213,6 +205,43 @@ func TestSeedContentModelRelationshipsAreConsistent(t *testing.T) {
 			if item.AssetID != "" && !assetIDs[item.AssetID] {
 				t.Fatalf("item %s points to missing asset %s on resource %s", item.ID, item.AssetID, resource.ID)
 			}
+		}
+	}
+}
+
+func TestSeedIC3GS6ProvidesThreeLevelsWithTopics(t *testing.T) {
+	svc := NewService()
+	seedService(svc)
+	ctx := context.Background()
+	model := svc.Taxonomy(ctx)
+	levelCategoryIDs := map[string]bool{
+		"ic3-gs6-level-1": false,
+		"ic3-gs6-level-2": false,
+		"ic3-gs6-level-3": false,
+	}
+	lessonCountByCategory := map[string]int{}
+	for _, category := range model.Categories {
+		if _, ok := levelCategoryIDs[category.ID]; ok {
+			levelCategoryIDs[category.ID] = true
+			if category.SubjectID != "ic3-gs6" {
+				t.Fatalf("level category %s has wrong subject: %+v", category.ID, category)
+			}
+		}
+	}
+	for _, section := range model.Sections {
+		if section.SubjectID != "ic3-gs6" {
+			continue
+		}
+		if section.CategoryID != "" {
+			lessonCountByCategory[section.CategoryID]++
+		}
+	}
+	for levelID, found := range levelCategoryIDs {
+		if !found {
+			t.Fatalf("expected seed category %s", levelID)
+		}
+		if got := lessonCountByCategory[levelID]; got == 0 {
+			t.Fatalf("expected level %s to have lesson sections", levelID)
 		}
 	}
 }

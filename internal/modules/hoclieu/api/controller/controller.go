@@ -27,12 +27,18 @@ func (c *Controller) RegisterPublicRoutes(rg *gin.RouterGroup) {
 	rg.GET("/home", c.Home)
 	rg.GET("/programs", c.Programs)
 	rg.GET("/programs/:slug", c.Program)
-	rg.GET("/taxonomy", c.Taxonomy)
+	rg.GET("/taxonomies", c.Taxonomy)
 	rg.GET("/portfolio", c.Portfolio)
 	rg.GET("/community", c.Community)
 }
 
 func (c *Controller) RegisterProtectedRoutes(rg *gin.RouterGroup) {
+	teacher := rg.Group("/teacher")
+	teacher.GET("/subjects/:subjectId/tree", middleware.RequireAccessPermission("hoclieu.resource.read"), c.TeacherSubjectTree)
+	teacher.GET("/recent-opened", middleware.RequireAccessPermission("hoclieu.resource.read"), c.TeacherRecentOpened)
+	teacher.GET("/progress", middleware.RequireAccessPermission("hoclieu.resource.read"), c.TeacherProgress)
+	teacher.POST("/progress-events", middleware.RequireAccessPermission("hoclieu.resource.read"), c.TrackTeacherProgressEvent)
+
 	rg.GET("/resources", middleware.RequireAccessPermission("hoclieu.resource.read"), c.ListResources)
 	rg.POST("/resources", middleware.RequireAccessPermission("hoclieu.resource.create"), c.CreateResource)
 	rg.PATCH("/resources/:resourceId", middleware.RequireAccessPermission("hoclieu.resource.update"), c.UpdateResource)
@@ -51,9 +57,15 @@ func (c *Controller) RegisterProtectedRoutes(rg *gin.RouterGroup) {
 
 	admin := rg.Group("/admin")
 	admin.GET("/content-model", middleware.RequireAccessPermission("hoclieu.resource.read"), c.Taxonomy)
+	admin.GET("/taxonomies", middleware.RequireAccessPermission("hoclieu.resource.read"), c.Taxonomy)
+	admin.GET("/taxonomy", middleware.RequireAccessPermission("hoclieu.resource.read"), c.Taxonomy)
+	admin.GET("/taxonomies/:kind", middleware.RequireAccessPermission("hoclieu.resource.read"), c.ListTaxonomyOptions)
 	admin.GET("/taxonomy/:kind", middleware.RequireAccessPermission("hoclieu.resource.read"), c.ListTaxonomyOptions)
+	admin.POST("/taxonomies/:kind", middleware.RequireAccessPermission("hoclieu.resource.create"), c.CreateTaxonomyOption)
 	admin.POST("/taxonomy/:kind", middleware.RequireAccessPermission("hoclieu.resource.create"), c.CreateTaxonomyOption)
+	admin.PATCH("/taxonomies/:kind/:id", middleware.RequireAccessPermission("hoclieu.resource.update"), c.UpdateTaxonomyOption)
 	admin.PATCH("/taxonomy/:kind/:id", middleware.RequireAccessPermission("hoclieu.resource.update"), c.UpdateTaxonomyOption)
+	admin.DELETE("/taxonomies/:kind/:id", middleware.RequireAccessPermission("hoclieu.resource.update"), c.DeleteTaxonomyOption)
 	admin.DELETE("/taxonomy/:kind/:id", middleware.RequireAccessPermission("hoclieu.resource.update"), c.DeleteTaxonomyOption)
 	admin.POST("/resources", middleware.RequireAccessPermission("hoclieu.resource.create"), c.CreateResource)
 	admin.PATCH("/resources/:resourceId", middleware.RequireAccessPermission("hoclieu.resource.update"), c.UpdateResource)
@@ -141,6 +153,45 @@ func (c *Controller) Resource(ctx *gin.Context) {
 func (c *Controller) ResourceItems(ctx *gin.Context) {
 	items, err := c.svc.ResourceItems(ctx.Request.Context(), ctx.Param("resourceId"), ctx.Query("query"))
 	c.respond(ctx, items, err, http.StatusOK)
+}
+
+func (c *Controller) TeacherSubjectTree(ctx *gin.Context) {
+	tree, err := c.svc.SubjectTree(
+		ctx.Request.Context(),
+		ctx.Param("subjectId"),
+		ctx.Query("schoolId"),
+		ctx.Query("academicYear"),
+		ctx.Query("parentId"),
+	)
+	c.respond(ctx, tree, err, http.StatusOK)
+}
+
+func (c *Controller) TeacherRecentOpened(ctx *gin.Context) {
+	limit, _ := strconv.Atoi(ctx.Query("limit"))
+	items := c.svc.RecentOpened(ctx.Request.Context(), ctx.Query("schoolId"), ctx.Query("academicYear"), limit)
+	response.SuccessGin(ctx, items)
+}
+
+func (c *Controller) TeacherProgress(ctx *gin.Context) {
+	progress, err := c.svc.Progress(
+		ctx.Request.Context(),
+		ctx.Query("subjectId"),
+		ctx.Query("nodeId"),
+		ctx.Query("schoolId"),
+		ctx.Query("academicYear"),
+	)
+	c.respond(ctx, progress, err, http.StatusOK)
+}
+
+func (c *Controller) TrackTeacherProgressEvent(ctx *gin.Context) {
+	var req TrackTeacherProgressEventRequestDTO
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		response.BadRequestGin(ctx, err)
+		return
+	}
+	req.TeacherID = middleware.GetUserID(ctx.Request.Context())
+	event, err := c.svc.TrackProgressEvent(ctx.Request.Context(), req)
+	c.respond(ctx, event, err, http.StatusCreated)
 }
 
 func (c *Controller) Portfolio(ctx *gin.Context) {

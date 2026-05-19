@@ -42,6 +42,10 @@ func main() {
 		fmt.Fprintf(os.Stderr, "prepare hoclieu storage: %v\n", err)
 		os.Exit(1)
 	}
+	if err := svc.SeedDefaultContent(ctx); err != nil {
+		fmt.Fprintf(os.Stderr, "seed hoclieu content: %v\n", err)
+		os.Exit(1)
+	}
 
 	taxonomy := svc.Taxonomy(ctx)
 	resources, total := svc.ListResources(ctx, hoclieu.ListResourceParams{Limit: 1})

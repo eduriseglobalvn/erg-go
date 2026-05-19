@@ -4,6 +4,7 @@ package access_control
 
 import (
 	"context"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -48,8 +49,11 @@ func (m *Module) Setup() error {
 	m.deps.Log.Info().Msg("access_control: module setup")
 	m.svc = acservice.NewService(m.deps.GORMClient, m.deps.Log)
 
-	// Seed default data on startup.
-	if err := m.svc.SeedDefaultData(context.Background()); err != nil {
+	// Seed default data on startup, but never let RBAC reconciliation block
+	// the whole API server from becoming available.
+	seedCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if err := m.svc.SeedDefaultData(seedCtx); err != nil {
 		m.deps.Log.Warn().Err(err).Msg("access_control: seed default data failed (may already exist)")
 	}
 

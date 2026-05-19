@@ -141,10 +141,10 @@ func createPDFResource(t *testing.T, router http.Handler, token string) Resource
 	req := httptest.NewRequest(http.MethodPost, "/api/hoclieu/resources", strings.NewReader(`{
 		"title":"ERG 81 PDF Metadata Card",
 		"slug":"erg-81-pdf-metadata-card",
-		"programSlug":"global-success",
-		"subjectId":"tieng-anh",
-		"gradeId":"7",
-		"categoryId":"textbook",
+		"programSlug":"ic3-digital-literacy",
+		"subjectId":"ic3-gs6",
+		"gradeId":"6",
+		"categoryId":"ic3-gs6-level-1",
 		"selectedFileType":"PDF",
 		"originalFileName":"erg-81.pdf",
 		"detectedMimeType":"application/pdf"

@@ -69,14 +69,14 @@ func TestHocLieuResourcesRejectMissingPermission(t *testing.T) {
 func TestHocLieuResourcesReturnSelectedFileTypeBadge(t *testing.T) {
 	router, token := testRouter(t)
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/hoclieu/resources?programSlug=global-success&gradeId=7", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/hoclieu/resources?subjectId=ic3-gs6&categoryId=ic3-gs6-level-1", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	router.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, `"selectedFileType":"PDF"`) || !strings.Contains(body, `"fileTypeBadge":"PPTX"`) {
+	if !strings.Contains(body, `"selectedFileType":"PPTX"`) || !strings.Contains(body, `"fileTypeBadge":"PPTX"`) {
 		t.Fatalf("response does not expose selected file type badges: %s", body)
 	}
 }
@@ -102,7 +102,7 @@ func TestHocLieuRejectsInvalidSelectedFileType(t *testing.T) {
 func TestHocLieuAdminContentModelIncludesExtensibleTaxonomy(t *testing.T) {
 	router, token := testRouter(t)
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/hoclieu/admin/content-model", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/hoclieu/admin/taxonomies", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	router.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -119,16 +119,61 @@ func TestHocLieuAdminContentModelIncludesExtensibleTaxonomy(t *testing.T) {
 func TestHocLieuAdminCanListSubjectsSeparately(t *testing.T) {
 	router, token := testRouter(t)
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/hoclieu/admin/taxonomy/subjects", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/hoclieu/admin/taxonomies/subjects", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	router.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
-	for _, fragment := range []string{`"id":"giao-duc-stem"`, `"id":"ic3"`, `"id":"mos"`} {
+	for _, fragment := range []string{`"id":"ic3-gs6"`, `"label":"IC3 GS6"`} {
 		if !strings.Contains(body, fragment) {
 			t.Fatalf("subjects response missing %s: %s", fragment, body)
+		}
+	}
+}
+
+func TestHocLieuAdminSubjectsMatchContentModelSubjects(t *testing.T) {
+	router, token := testRouter(t)
+
+	contentModelRec := httptest.NewRecorder()
+	contentModelReq := httptest.NewRequest(http.MethodGet, "/api/hoclieu/admin/taxonomies", nil)
+	contentModelReq.Header.Set("Authorization", "Bearer "+token)
+	router.ServeHTTP(contentModelRec, contentModelReq)
+	if contentModelRec.Code != http.StatusOK {
+		t.Fatalf("content-model status = %d, want 200: %s", contentModelRec.Code, contentModelRec.Body.String())
+	}
+
+	subjectsRec := httptest.NewRecorder()
+	subjectsReq := httptest.NewRequest(http.MethodGet, "/api/hoclieu/admin/taxonomies/subjects", nil)
+	subjectsReq.Header.Set("Authorization", "Bearer "+token)
+	router.ServeHTTP(subjectsRec, subjectsReq)
+	if subjectsRec.Code != http.StatusOK {
+		t.Fatalf("subjects status = %d, want 200: %s", subjectsRec.Code, subjectsRec.Body.String())
+	}
+
+	var contentModelBody struct {
+		Data struct {
+			Subjects []TaxonomyOptionDTO `json:"subjects"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(contentModelRec.Body.Bytes(), &contentModelBody); err != nil {
+		t.Fatalf("decode content-model: %v\n%s", err, contentModelRec.Body.String())
+	}
+
+	var subjectsBody struct {
+		Data []TaxonomyOptionDTO `json:"data"`
+	}
+	if err := json.Unmarshal(subjectsRec.Body.Bytes(), &subjectsBody); err != nil {
+		t.Fatalf("decode subjects: %v\n%s", err, subjectsRec.Body.String())
+	}
+
+	if len(contentModelBody.Data.Subjects) != len(subjectsBody.Data) {
+		t.Fatalf("subjects length mismatch: content-model=%d taxonomy/subjects=%d", len(contentModelBody.Data.Subjects), len(subjectsBody.Data))
+	}
+	for index := range contentModelBody.Data.Subjects {
+		if contentModelBody.Data.Subjects[index].ID != subjectsBody.Data[index].ID {
+			t.Fatalf("subject mismatch at index %d: content-model=%s taxonomy/subjects=%s", index, contentModelBody.Data.Subjects[index].ID, subjectsBody.Data[index].ID)
 		}
 	}
 }
@@ -136,12 +181,12 @@ func TestHocLieuAdminCanListSubjectsSeparately(t *testing.T) {
 func TestHocLieuAdminCanCreateTopicAndPublishedResource(t *testing.T) {
 	router, token := testRouter(t)
 	topicRec := httptest.NewRecorder()
-	topicReq := httptest.NewRequest(http.MethodPost, "/api/hoclieu/admin/taxonomy/topics", strings.NewReader(`{
-		"label":"Bai 2: Cay xanh quanh em",
-		"subjectId":"giao-duc-stem",
-		"gradeId":"1",
-		"bookSeriesId":"stem-hanh-trinh-sang-tao",
-		"categoryId":"slides"
+	topicReq := httptest.NewRequest(http.MethodPost, "/api/hoclieu/admin/taxonomies/topics", strings.NewReader(`{
+		"label":"Chu de 4: Email co ban",
+		"subjectId":"ic3-gs6",
+		"gradeId":"6",
+		"categoryId":"ic3-gs6-level-1",
+		"parentId":"ic3-gs6-level-1"
 	}`))
 	topicReq.Header.Set("Authorization", "Bearer "+token)
 	topicReq.Header.Set("Content-Type", "application/json")
@@ -152,20 +197,19 @@ func TestHocLieuAdminCanCreateTopicAndPublishedResource(t *testing.T) {
 
 	resourceRec := httptest.NewRecorder()
 	resourceReq := httptest.NewRequest(http.MethodPost, "/api/hoclieu/admin/resources", strings.NewReader(`{
-		"title":"STEM 1 - Bai giang Cay xanh",
-		"programSlug":"giao-duc-stem",
-		"subjectId":"giao-duc-stem",
-		"gradeId":"1",
-		"categoryId":"slides",
-		"documentTypeId":"slides",
-		"bookSeriesId":"stem-hanh-trinh-sang-tao",
-		"topicId":"bai-2-cay-xanh-quanh-em",
+		"title":"IC3 GS6 - Email co ban",
+		"programSlug":"ic3-digital-literacy",
+		"subjectId":"ic3-gs6",
+		"gradeId":"6",
+		"categoryId":"ic3-gs6-level-1",
+		"documentTypeId":"ic3-gs6-level-1",
+		"topicId":"chu-de-4-email-co-ban",
 		"selectedFileType":"PPTX",
-		"originalFileName":"stem-1-cay-xanh.pptx",
+		"originalFileName":"ic3-gs6-email-co-ban.pptx",
 		"detectedMimeType":"application/vnd.openxmlformats-officedocument.presentationml.presentation",
 		"status":"published",
 		"visibility":"public",
-		"lectureDesign":{"templateId":"hoclieu-lecture-grid","bannerTitle":"STEM 1","unitLabels":["Bai 2"]}
+		"lectureDesign":{"templateId":"hoclieu-lecture-grid","bannerTitle":"IC3 GS6","unitLabels":["Chu de 4"]}
 	}`))
 	resourceReq.Header.Set("Authorization", "Bearer "+token)
 	resourceReq.Header.Set("Content-Type", "application/json")
@@ -173,7 +217,7 @@ func TestHocLieuAdminCanCreateTopicAndPublishedResource(t *testing.T) {
 	if resourceRec.Code != http.StatusCreated {
 		t.Fatalf("resource status = %d, want 201: %s", resourceRec.Code, resourceRec.Body.String())
 	}
-	if !strings.Contains(resourceRec.Body.String(), `"lectureDesign"`) || !strings.Contains(resourceRec.Body.String(), `"documentTypeId":"slides"`) {
+	if !strings.Contains(resourceRec.Body.String(), `"lectureDesign"`) || !strings.Contains(resourceRec.Body.String(), `"documentTypeId":"ic3-gs6-level-1"`) {
 		t.Fatalf("resource response missing authoring metadata: %s", resourceRec.Body.String())
 	}
 }
@@ -183,13 +227,12 @@ func TestHocLieuAdminResourceUploadFilterAndDeleteFlow(t *testing.T) {
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
 	fields := map[string]string{
-		"title":            "STEM 1 - Upload Unit 12",
-		"subjectId":        "giao-duc-stem",
-		"gradeId":          "1",
-		"categoryId":       "slides",
-		"documentTypeId":   "slides",
-		"bookSeriesId":     "stem-hanh-trinh-sang-tao",
-		"topicId":          "unit-12-at-the-lake",
+		"title":            "IC3 GS6 - Upload Excel nhap mon",
+		"subjectId":        "ic3-gs6",
+		"gradeId":          "7",
+		"categoryId":       "ic3-gs6-level-2",
+		"documentTypeId":   "ic3-gs6-level-2",
+		"topicId":          "ic3-gs6-topic-level-2-excel",
 		"selectedFileType": "PPTX",
 		"visibility":       "public",
 		"status":           "published",
@@ -200,7 +243,7 @@ func TestHocLieuAdminResourceUploadFilterAndDeleteFlow(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	part, err := writer.CreateFormFile("file", "unit-12.pptx")
+	part, err := writer.CreateFormFile("file", "ic3-gs6-excel.pptx")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -237,13 +280,13 @@ func TestHocLieuAdminResourceUploadFilterAndDeleteFlow(t *testing.T) {
 	}
 
 	listRec := httptest.NewRecorder()
-	listReq := httptest.NewRequest(http.MethodGet, "/api/hoclieu/resources?subjectId=giao-duc-stem&bookSeriesId=stem-hanh-trinh-sang-tao&topicId=unit-12-at-the-lake&documentTypeId=slides", nil)
+	listReq := httptest.NewRequest(http.MethodGet, "/api/hoclieu/resources?subjectId=ic3-gs6&topicId=ic3-gs6-topic-level-2-excel&documentTypeId=ic3-gs6-level-2", nil)
 	listReq.Header.Set("Authorization", "Bearer "+token)
 	router.ServeHTTP(listRec, listReq)
 	if listRec.Code != http.StatusOK {
 		t.Fatalf("list status = %d, want 200: %s", listRec.Code, listRec.Body.String())
 	}
-	if !strings.Contains(listRec.Body.String(), "STEM 1 - Upload Unit 12") {
+	if !strings.Contains(listRec.Body.String(), "IC3 GS6 - Upload Excel nhap mon") {
 		t.Fatalf("list did not include uploaded resource: %s", listRec.Body.String())
 	}
 
@@ -258,11 +301,34 @@ func TestHocLieuAdminResourceUploadFilterAndDeleteFlow(t *testing.T) {
 
 func TestHocLieuAdminCanMoveTaxonomyNode(t *testing.T) {
 	router, token := testRouter(t)
+	createRec := httptest.NewRecorder()
+	createReq := httptest.NewRequest(http.MethodPost, "/api/hoclieu/admin/taxonomies/topics", strings.NewReader(`{
+		"label":"Level 2 - Bài thực hành PowerPoint",
+		"subjectId":"ic3-gs6",
+		"gradeId":"7",
+		"categoryId":"ic3-gs6-level-2",
+		"parentId":"ic3-gs6-level-2"
+	}`))
+	createReq.Header.Set("Authorization", "Bearer "+token)
+	createReq.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(createRec, createReq)
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201: %s", createRec.Code, createRec.Body.String())
+	}
+	var createBody struct {
+		Data TaxonomyOptionDTO `json:"data"`
+	}
+	if err := json.Unmarshal(createRec.Body.Bytes(), &createBody); err != nil {
+		t.Fatalf("decode create response: %v\n%s", err, createRec.Body.String())
+	}
+	if createBody.Data.ID == "" {
+		t.Fatalf("create response missing taxonomy id: %s", createRec.Body.String())
+	}
+
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPatch, "/api/hoclieu/admin/taxonomy/topics/ta7-my-new-school", strings.NewReader(`{
-		"parentId":"slides",
-		"categoryId":"slides",
-		"bookSeriesId":"stem-hanh-trinh-sang-tao",
+	req := httptest.NewRequest(http.MethodPatch, "/api/hoclieu/admin/taxonomies/topics/"+createBody.Data.ID, strings.NewReader(`{
+		"parentId":"ic3-gs6-level-3",
+		"categoryId":"ic3-gs6-level-3",
 		"sortOrder":99
 	}`))
 	req.Header.Set("Authorization", "Bearer "+token)
@@ -272,7 +338,7 @@ func TestHocLieuAdminCanMoveTaxonomyNode(t *testing.T) {
 		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
-	for _, fragment := range []string{`"parentId":"slides"`, `"categoryId":"slides"`, `"sortOrder":99`} {
+	for _, fragment := range []string{`"parentId":"ic3-gs6-level-3"`, `"categoryId":"ic3-gs6-level-3"`, `"sortOrder":99`} {
 		if !strings.Contains(body, fragment) {
 			t.Fatalf("patch response missing %s: %s", fragment, body)
 		}
@@ -294,6 +360,49 @@ func TestHocLieuLaunchHidesUpstreamURLs(t *testing.T) {
 	}
 	if !strings.Contains(body, `"viewerTokenUrl"`) || !strings.Contains(body, `"streamUrl"`) {
 		t.Fatalf("launch response missing same-domain viewer urls: %s", body)
+	}
+}
+
+func TestHocLieuLinkResourceLaunchesGoogleSlidesEmbed(t *testing.T) {
+	router, token := testRouter(t)
+
+	createRec := httptest.NewRecorder()
+	createReq := httptest.NewRequest(http.MethodPost, "/api/hoclieu/admin/resources", strings.NewReader(`{
+		"title":"Bai giang Google Slides",
+		"slug":"bai-giang-google-slides",
+		"thumbnailUrl":"https://docs.google.com/presentation/d/1dDhYpe7Ri4mDM3VR0LpDkalzpJDhDkMm/edit",
+		"programSlug":"ic3-gs6",
+		"subjectId":"ic3-gs6",
+		"categoryId":"level-1",
+		"sectionId":"bài-01--xác-định-phần-cứng-và-phần-mềm-phù-hợp",
+		"topicId":"chủ-đề-1-:-công-dân-số",
+		"documentTypeId":"level-1",
+		"selectedFileType":"LINK",
+		"status":"published",
+		"visibility":"public",
+		"canDownload":false
+	}`))
+	createReq.Header.Set("Authorization", "Bearer "+token)
+	createReq.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(createRec, createReq)
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201: %s", createRec.Code, createRec.Body.String())
+	}
+
+	launchRec := httptest.NewRecorder()
+	launchReq := httptest.NewRequest(http.MethodGet, "/api/hoclieu/assets/asset-bai-giang-google-slides/launch", nil)
+	launchReq.Header.Set("Authorization", "Bearer "+token)
+	router.ServeHTTP(launchRec, launchReq)
+	if launchRec.Code != http.StatusOK {
+		t.Fatalf("launch status = %d, want 200: %s", launchRec.Code, launchRec.Body.String())
+	}
+
+	body := launchRec.Body.String()
+	if !strings.Contains(body, `"launchMode":"google_slide_embed"`) {
+		t.Fatalf("launch response missing google slide mode: %s", body)
+	}
+	if !strings.Contains(body, `"embedUrl":"https://docs.google.com/presentation/d/1dDhYpe7Ri4mDM3VR0LpDkalzpJDhDkMm/embed`) {
+		t.Fatalf("launch response missing google slide embed url: %s", body)
 	}
 }
 

@@ -14,21 +14,23 @@ import (
 )
 
 const (
-	collectionTaxonomy      = "hoclieu_taxonomy"
-	collectionPrograms      = "hoclieu_programs"
-	collectionDesigner      = "hoclieu_designer_presets"
-	collectionResources     = "hoclieu_resources"
-	collectionAssets        = "hoclieu_assets"
-	collectionResourceItems = "hoclieu_resource_items"
+	collectionTaxonomy       = "hoclieu_taxonomy"
+	collectionPrograms       = "hoclieu_programs"
+	collectionDesigner       = "hoclieu_designer_presets"
+	collectionResources      = "hoclieu_resources"
+	collectionAssets         = "hoclieu_assets"
+	collectionResourceItems  = "hoclieu_resource_items"
+	collectionProgressEvents = "hoclieu_teacher_progress_events"
 )
 
 type Repository struct {
-	taxonomy  *mongo.Collection
-	programs  *mongo.Collection
-	presets   *mongo.Collection
-	resources *mongo.Collection
-	assets    *mongo.Collection
-	items     *mongo.Collection
+	taxonomy       *mongo.Collection
+	programs       *mongo.Collection
+	presets        *mongo.Collection
+	resources      *mongo.Collection
+	assets         *mongo.Collection
+	items          *mongo.Collection
+	progressEvents *mongo.Collection
 }
 
 type resourceDocument struct {
@@ -100,14 +102,30 @@ type itemDocument struct {
 	UpdatedAt  time.Time       `bson:"updated_at"`
 }
 
+type progressEventDocument struct {
+	ID           string                   `bson:"_id"`
+	TenantID     string                   `bson:"tenant_id"`
+	TeacherID    string                   `bson:"teacher_id"`
+	SchoolID     string                   `bson:"school_id"`
+	AcademicYear string                   `bson:"academic_year"`
+	SubjectID    string                   `bson:"subject_id"`
+	NodeID       string                   `bson:"node_id"`
+	NodeKind     TeacherDashboardNodeKind `bson:"node_kind"`
+	EventType    TeacherProgressEventType `bson:"event_type"`
+	ResourceID   string                   `bson:"resource_id,omitempty"`
+	OccurredAt   time.Time                `bson:"occurred_at"`
+	CreatedAt    time.Time                `bson:"created_at"`
+}
+
 func NewRepository(mongoClient *database.MongoClient) *Repository {
 	return &Repository{
-		taxonomy:  mongoClient.Collection(collectionTaxonomy),
-		programs:  mongoClient.Collection(collectionPrograms),
-		presets:   mongoClient.Collection(collectionDesigner),
-		resources: mongoClient.Collection(collectionResources),
-		assets:    mongoClient.Collection(collectionAssets),
-		items:     mongoClient.Collection(collectionResourceItems),
+		taxonomy:       mongoClient.Collection(collectionTaxonomy),
+		programs:       mongoClient.Collection(collectionPrograms),
+		presets:        mongoClient.Collection(collectionDesigner),
+		resources:      mongoClient.Collection(collectionResources),
+		assets:         mongoClient.Collection(collectionAssets),
+		items:          mongoClient.Collection(collectionResourceItems),
+		progressEvents: mongoClient.Collection(collectionProgressEvents),
 	}
 }
 
@@ -151,7 +169,15 @@ func (r *Repository) EnsureIndexes(ctx context.Context) error {
 		{Keys: bson.D{{Key: "tenant_id", Value: 1}, {Key: "resource_id", Value: 1}, {Key: "item.sortorder", Value: 1}}},
 		{Keys: bson.D{{Key: "tenant_id", Value: 1}, {Key: "_id", Value: 1}}, Options: options.Index().SetUnique(true)},
 	}
-	_, err := r.items.Indexes().CreateMany(ctx, itemIndexes)
+	if _, err := r.items.Indexes().CreateMany(ctx, itemIndexes); err != nil {
+		return err
+	}
+	progressEventIndexes := []mongo.IndexModel{
+		{Keys: bson.D{{Key: "tenant_id", Value: 1}, {Key: "school_id", Value: 1}, {Key: "academic_year", Value: 1}, {Key: "subject_id", Value: 1}, {Key: "occurred_at", Value: -1}}},
+		{Keys: bson.D{{Key: "tenant_id", Value: 1}, {Key: "school_id", Value: 1}, {Key: "academic_year", Value: 1}, {Key: "subject_id", Value: 1}, {Key: "node_id", Value: 1}, {Key: "event_type", Value: 1}, {Key: "occurred_at", Value: -1}}},
+		{Keys: bson.D{{Key: "tenant_id", Value: 1}, {Key: "_id", Value: 1}}, Options: options.Index().SetUnique(true)},
+	}
+	_, err := r.progressEvents.Indexes().CreateMany(ctx, progressEventIndexes)
 	return err
 }
 
@@ -222,7 +248,7 @@ func (r *Repository) ListDesignerPresets(ctx context.Context, tenantID string) (
 
 func (r *Repository) UpsertTaxonomy(ctx context.Context, tenantID, kind string, option TaxonomyOptionDTO) error {
 	now := time.Now().UTC()
-	doc := taxonomyDocument{ID: option.ID, TenantID: tenantID, Kind: kind, Option: option, CreatedAt: now, UpdatedAt: now}
+	doc := taxonomyDocument{ID: taxonomyDocumentID(kind, option.ID), TenantID: tenantID, Kind: kind, Option: option, CreatedAt: now, UpdatedAt: now}
 	update := bson.M{
 		"$set": bson.M{
 			"tenant_id":  doc.TenantID,
@@ -230,15 +256,22 @@ func (r *Repository) UpsertTaxonomy(ctx context.Context, tenantID, kind string, 
 			"option":     doc.Option,
 			"updated_at": doc.UpdatedAt,
 		},
-		"$setOnInsert": bson.M{"created_at": doc.CreatedAt},
+		"$setOnInsert": bson.M{"_id": doc.ID, "created_at": doc.CreatedAt},
 	}
-	_, err := r.taxonomy.UpdateOne(ctx, bson.M{"_id": doc.ID, "tenant_id": tenantID, "kind": kind}, update, options.UpdateOne().SetUpsert(true))
+	_, err := r.taxonomy.UpdateOne(ctx, bson.M{"tenant_id": tenantID, "kind": kind, "option.id": option.ID}, update, options.UpdateOne().SetUpsert(true))
 	return err
 }
 
 func (r *Repository) DeleteTaxonomy(ctx context.Context, tenantID, kind, id string) error {
-	_, err := r.taxonomy.DeleteOne(ctx, bson.M{"_id": id, "tenant_id": tenantID, "kind": kind})
+	_, err := r.taxonomy.DeleteOne(ctx, bson.M{"tenant_id": tenantID, "kind": kind, "option.id": id})
 	return err
+}
+
+func taxonomyDocumentID(kind, id string) string {
+	if kind == "" {
+		return id
+	}
+	return kind + ":" + id
 }
 
 func (r *Repository) ListTaxonomy(ctx context.Context, tenantID string) (map[string][]TaxonomyOptionDTO, error) {
@@ -504,4 +537,68 @@ func resourceDocFromDetail(tenantID string, detail *ResourceDetailDTO, now time.
 		CreatedAt:        now,
 		UpdatedAt:        cp.UpdatedAt,
 	}
+}
+
+func (r *Repository) AppendProgressEvent(ctx context.Context, tenantID string, event TeacherProgressEventDTO) error {
+	now := time.Now().UTC()
+	doc := progressEventDocument{
+		ID:           event.ID,
+		TenantID:     tenantID,
+		TeacherID:    event.TeacherID,
+		SchoolID:     event.SchoolID,
+		AcademicYear: event.AcademicYear,
+		SubjectID:    event.SubjectID,
+		NodeID:       event.NodeID,
+		NodeKind:     event.NodeKind,
+		EventType:    event.EventType,
+		ResourceID:   event.ResourceID,
+		OccurredAt:   event.OccurredAt,
+		CreatedAt:    now,
+	}
+	if doc.ID == "" {
+		doc.ID = database.NewID()
+	}
+	if doc.OccurredAt.IsZero() {
+		doc.OccurredAt = now
+	}
+	_, err := r.progressEvents.InsertOne(ctx, doc)
+	return err
+}
+
+func (r *Repository) ListProgressEvents(ctx context.Context, tenantID string, schoolID, academicYear, subjectID string) ([]TeacherProgressEventDTO, error) {
+	filter := bson.M{"tenant_id": tenantID}
+	if schoolID != "" {
+		filter["school_id"] = schoolID
+	}
+	if academicYear != "" {
+		filter["academic_year"] = academicYear
+	}
+	if subjectID != "" {
+		filter["subject_id"] = subjectID
+	}
+	cur, err := r.progressEvents.Find(ctx, filter, options.Find().SetSort(bson.D{{Key: "occurred_at", Value: -1}, {Key: "created_at", Value: -1}}))
+	if err != nil {
+		return nil, err
+	}
+	defer cur.Close(ctx)
+	var docs []progressEventDocument
+	if err := cur.All(ctx, &docs); err != nil {
+		return nil, err
+	}
+	out := make([]TeacherProgressEventDTO, 0, len(docs))
+	for _, doc := range docs {
+		out = append(out, TeacherProgressEventDTO{
+			ID:           doc.ID,
+			TeacherID:    doc.TeacherID,
+			SchoolID:     doc.SchoolID,
+			AcademicYear: doc.AcademicYear,
+			SubjectID:    doc.SubjectID,
+			NodeID:       doc.NodeID,
+			NodeKind:     doc.NodeKind,
+			EventType:    doc.EventType,
+			ResourceID:   doc.ResourceID,
+			OccurredAt:   doc.OccurredAt,
+		})
+	}
+	return out, nil
 }

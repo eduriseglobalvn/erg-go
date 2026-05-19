@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"net/url"
 	"sort"
 	"strings"
 	"sync"
@@ -37,6 +38,7 @@ type Service struct {
 	assets          map[string]*AssetRecord
 	items           map[string][]ResourceItemDTO
 	pages           map[string][]ViewerPageDTO
+	progressEvents  []TeacherProgressEventDTO
 	audit           auditservice.Publisher
 	r2              *storage.R2Client
 	repo            Repository
@@ -67,7 +69,9 @@ type ListResourceParams struct {
 type Repository interface {
 	EnsureIndexes(ctx context.Context) error
 	ListTaxonomy(ctx context.Context, tenantID string) (map[string][]TaxonomyOptionDTO, error)
+	UpsertProgram(ctx context.Context, tenantID string, program ProgramDTO) error
 	ListPrograms(ctx context.Context, tenantID string) ([]ProgramDTO, error)
+	UpsertDesignerPreset(ctx context.Context, tenantID string, preset LectureDesignerPresetDTO) error
 	ListDesignerPresets(ctx context.Context, tenantID string) ([]LectureDesignerPresetDTO, error)
 	ListResources(ctx context.Context, tenantID string, params ListResourceParams) ([]ResourceDetailDTO, int64, error)
 	ListAssets(ctx context.Context, tenantID string) ([]AssetRecord, error)
@@ -80,15 +84,18 @@ type Repository interface {
 	GetAsset(ctx context.Context, tenantID, id string) (*AssetRecord, error)
 	UpsertTaxonomy(ctx context.Context, tenantID, kind string, option TaxonomyOptionDTO) error
 	DeleteTaxonomy(ctx context.Context, tenantID, kind, id string) error
+	AppendProgressEvent(ctx context.Context, tenantID string, event TeacherProgressEventDTO) error
+	ListProgressEvents(ctx context.Context, tenantID string, schoolID, academicYear, subjectID string) ([]TeacherProgressEventDTO, error)
 }
 
 func NewService(r2 ...*storage.R2Client) *Service {
 	s := &Service{
-		resources: map[string]*ResourceDetailDTO{},
-		assets:    map[string]*AssetRecord{},
-		items:     map[string][]ResourceItemDTO{},
-		pages:     map[string][]ViewerPageDTO{},
-		audit:     auditservice.NoopPublisher{},
+		resources:      map[string]*ResourceDetailDTO{},
+		assets:         map[string]*AssetRecord{},
+		items:          map[string][]ResourceItemDTO{},
+		pages:          map[string][]ViewerPageDTO{},
+		progressEvents: []TeacherProgressEventDTO{},
+		audit:          auditservice.NoopPublisher{},
 	}
 	if len(r2) > 0 {
 		s.r2 = r2[0]
@@ -122,6 +129,135 @@ func (s *Service) EnsurePersistentStore(ctx context.Context) error {
 		return err
 	}
 	return s.LoadFromRepository(ctx)
+}
+
+func (s *Service) SeedDefaultContent(ctx context.Context) error {
+	SeedService(s)
+	if s.repo == nil {
+		return nil
+	}
+	tenantID := s.tenantID(ctx)
+	if err := s.purgeLegacyIC3GS6Seed(ctx, tenantID); err != nil {
+		return err
+	}
+	s.mu.RLock()
+	programs := append([]ProgramDTO{}, s.programs...)
+	grades := append([]TaxonomyOptionDTO{}, s.grades...)
+	subjects := append([]TaxonomyOptionDTO{}, s.subjects...)
+	categories := append([]TaxonomyOptionDTO{}, s.categories...)
+	sections := append([]TaxonomyOptionDTO{}, s.sections...)
+	bookSeries := append([]TaxonomyOptionDTO{}, s.bookSeries...)
+	topics := append([]TaxonomyOptionDTO{}, s.topics...)
+	presets := append([]LectureDesignerPresetDTO{}, s.designerPresets...)
+	resources := make([]*ResourceDetailDTO, 0, len(s.resources))
+	for _, resource := range s.resources {
+		resources = append(resources, cloneResource(resource))
+	}
+	assets := make([]AssetRecord, 0, len(s.assets))
+	for _, asset := range s.assets {
+		assets = append(assets, *asset)
+	}
+	items := make(map[string][]ResourceItemDTO, len(s.items))
+	for resourceID, resourceItems := range s.items {
+		items[resourceID] = append([]ResourceItemDTO{}, resourceItems...)
+	}
+	s.mu.RUnlock()
+
+	for _, program := range programs {
+		if err := s.repo.UpsertProgram(ctx, tenantID, program); err != nil {
+			return err
+		}
+	}
+	for kind, options := range map[string][]TaxonomyOptionDTO{
+		"grades":      grades,
+		"subjects":    subjects,
+		"categories":  categories,
+		"sections":    sections,
+		"book-series": bookSeries,
+		"topics":      topics,
+	} {
+		for _, option := range options {
+			if err := s.repo.UpsertTaxonomy(ctx, tenantID, kind, option); err != nil {
+				return err
+			}
+		}
+	}
+	for _, preset := range presets {
+		if err := s.repo.UpsertDesignerPreset(ctx, tenantID, preset); err != nil {
+			return err
+		}
+	}
+	for _, resource := range resources {
+		if err := s.repo.UpsertResource(ctx, tenantID, resource); err != nil {
+			return err
+		}
+		if err := s.repo.ReplaceResourceItems(ctx, tenantID, resource.ID, items[resource.ID]); err != nil {
+			return err
+		}
+	}
+	for _, asset := range assets {
+		if err := s.repo.UpsertAsset(ctx, tenantID, asset); err != nil {
+			return err
+		}
+	}
+	return s.LoadFromRepository(ctx)
+}
+
+func (s *Service) purgeLegacyIC3GS6Seed(ctx context.Context, tenantID string) error {
+	taxonomy, err := s.repo.ListTaxonomy(ctx, tenantID)
+	if err != nil {
+		return err
+	}
+
+	validSectionIDs := map[string]bool{
+		"ic3-gs6-level-1-lesson-1": true,
+		"ic3-gs6-level-1-lesson-2": true,
+		"ic3-gs6-level-2-lesson-1": true,
+		"ic3-gs6-level-2-lesson-2": true,
+		"ic3-gs6-level-3-lesson-1": true,
+		"ic3-gs6-level-3-lesson-2": true,
+	}
+
+	shouldDeleteTaxonomy := func(kind string, option TaxonomyOptionDTO) bool {
+		switch kind {
+		case "topics":
+			return option.SubjectID == "ic3-gs6" || strings.HasPrefix(option.ID, "ic3-gs6-topic-")
+		case "sections":
+			return option.SubjectID == "ic3-gs6" && !validSectionIDs[option.ID]
+		default:
+			return false
+		}
+	}
+
+	for kind, options := range map[string][]TaxonomyOptionDTO{
+		"topics":   taxonomy["topics"],
+		"sections": taxonomy["sections"],
+	} {
+		for _, option := range options {
+			if !shouldDeleteTaxonomy(kind, option) {
+				continue
+			}
+			if err := s.repo.DeleteTaxonomy(ctx, tenantID, kind, option.ID); err != nil {
+				return err
+			}
+		}
+	}
+
+	resources, _, err := s.repo.ListResources(ctx, tenantID, ListResourceParams{Page: 1, Limit: 200})
+	if err != nil {
+		return err
+	}
+	for _, resource := range resources {
+		if resource.SubjectID != "ic3-gs6" {
+			continue
+		}
+		if resource.TopicID != "" || resource.SectionID == "support-components" || !validSectionIDs[resource.SectionID] {
+			if err := s.repo.DeleteResource(ctx, tenantID, resource.ID); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func (s *Service) LoadFromRepository(ctx context.Context) error {
@@ -220,28 +356,21 @@ func (s *Service) Program(_ context.Context, slug string) (*ProgramDTO, error) {
 func (s *Service) Taxonomy(context.Context) TaxonomyResponseDTO {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return TaxonomyResponseDTO{
-		Programs:        append([]ProgramDTO(nil), s.programs...),
-		Grades:          append([]TaxonomyOptionDTO(nil), s.grades...),
-		Subjects:        append([]TaxonomyOptionDTO(nil), s.subjects...),
-		Categories:      append([]TaxonomyOptionDTO(nil), s.categories...),
-		Sections:        append([]TaxonomyOptionDTO(nil), s.sections...),
-		BookSeries:      append([]TaxonomyOptionDTO(nil), s.bookSeries...),
-		Topics:          append([]TaxonomyOptionDTO(nil), s.topics...),
-		FileTypes:       fileTypes(),
-		DesignerPresets: append([]LectureDesignerPresetDTO(nil), s.designerPresets...),
-	}
+	return s.publicTaxonomyResponseLocked()
 }
 
 func (s *Service) ListResources(ctx context.Context, params ListResourceParams) ([]ResourceCardDTO, int64) {
 	if s.repo != nil {
-		resources, total, err := s.repo.ListResources(ctx, s.tenantID(ctx), params)
+		resources, _, err := s.repo.ListResources(ctx, s.tenantID(ctx), params)
 		if err == nil {
 			items := make([]ResourceCardDTO, 0, len(resources))
 			for i := range resources {
+				if !isPublicSubjectID(resources[i].SubjectID) {
+					continue
+				}
 				items = append(items, resources[i].ResourceCardDTO)
 			}
-			return items, total
+			return items, int64(len(items))
 		}
 	}
 	s.mu.RLock()
@@ -255,6 +384,9 @@ func (s *Service) ListResources(ctx context.Context, params ListResourceParams) 
 	query := strings.ToLower(strings.TrimSpace(params.Query))
 	items := make([]ResourceCardDTO, 0, len(s.resources))
 	for _, resource := range s.resources {
+		if !isPublicSubjectID(resource.SubjectID) {
+			continue
+		}
 		if params.GradeID != "" && resource.GradeID != params.GradeID {
 			continue
 		}
@@ -377,6 +509,16 @@ func (s *Service) CreateResource(ctx context.Context, req CreateResourceRequestD
 	assetID := "asset-" + req.Slug
 	resourceAudit := newFileTypeAudit(now, req.ActorID, "resource.create", "", req.SelectedFileType, validation.OriginalFileName, validation.DetectedMimeType, validation.Warnings)
 	assetAudit := newFileTypeAudit(now, req.ActorID, "resource.create.asset", "", req.SelectedFileType, validation.OriginalFileName, validation.DetectedMimeType, validation.Warnings)
+	upstreamURL := strings.TrimSpace(req.UpstreamURL)
+	storageURL := strings.TrimSpace(req.ThumbnailURL)
+	if req.SelectedFileType == AssetFileTypeLink {
+		if upstreamURL == "" && isHTTPURLValue(storageURL) {
+			upstreamURL = storageURL
+		}
+		if storageURL == "" {
+			storageURL = upstreamURL
+		}
+	}
 	card := ResourceCardDTO{
 		ID:             id,
 		Slug:           req.Slug,
@@ -404,11 +546,11 @@ func (s *Service) CreateResource(ctx context.Context, req CreateResourceRequestD
 		ResourceID:      id,
 		Title:           req.Title,
 		StorageProvider: "r2",
-		StorageURL:      req.ThumbnailURL,
+		StorageURL:      storageURL,
 		Status:          "ready",
 		CanDownload:     canDownload,
 		UpdatedAt:       now,
-	}}
+	}, UpstreamURL: upstreamURL}
 	applyAssetFileTypeMetadata(&asset.AssetDTO, req.SelectedFileType, validation, assetAudit)
 	detail := &ResourceDetailDTO{
 		ResourceCardDTO: card,
@@ -726,17 +868,46 @@ func (s *Service) ListTaxonomyOptions(ctx context.Context, kind string) ([]Taxon
 			return nil, err
 		}
 		if options, ok := taxonomy[normalizedKind]; ok {
-			return append([]TaxonomyOptionDTO(nil), options...), nil
+			return filterPublicOptionsForKind(normalizedKind, options), nil
 		}
 		return nil, ErrNotFound
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	target := s.taxonomySlice(normalizedKind)
-	if target == nil {
+	return publicTaxonomyOptionsForKind(normalizedKind, s.publicTaxonomyResponseLocked())
+}
+
+func (s *Service) publicTaxonomyResponseLocked() TaxonomyResponseDTO {
+	return TaxonomyResponseDTO{
+		Programs:        filterPublicPrograms(s.programs),
+		Grades:          filterPublicGrades(s.grades),
+		Subjects:        filterPublicSubjects(s.subjects),
+		Categories:      filterPublicTaxonomyOptions(s.categories),
+		Sections:        filterPublicOptionsForKind("sections", s.sections),
+		BookSeries:      filterPublicTaxonomyOptions(s.bookSeries),
+		Topics:          filterPublicTaxonomyOptions(s.topics),
+		FileTypes:       fileTypes(),
+		DesignerPresets: append([]LectureDesignerPresetDTO{}, s.designerPresets...),
+	}
+}
+
+func publicTaxonomyOptionsForKind(kind string, model TaxonomyResponseDTO) ([]TaxonomyOptionDTO, error) {
+	switch kind {
+	case "grades":
+		return append([]TaxonomyOptionDTO(nil), model.Grades...), nil
+	case "subjects":
+		return append([]TaxonomyOptionDTO(nil), model.Subjects...), nil
+	case "categories":
+		return append([]TaxonomyOptionDTO(nil), model.Categories...), nil
+	case "sections":
+		return append([]TaxonomyOptionDTO(nil), model.Sections...), nil
+	case "book-series":
+		return append([]TaxonomyOptionDTO(nil), model.BookSeries...), nil
+	case "topics":
+		return append([]TaxonomyOptionDTO(nil), model.Topics...), nil
+	default:
 		return nil, ErrNotFound
 	}
-	return append([]TaxonomyOptionDTO(nil), (*target)...), nil
 }
 
 func (s *Service) UpdateTaxonomyOption(ctx context.Context, kind, id string, req UpdateTaxonomyOptionRequestDTO) (TaxonomyOptionDTO, error) {
@@ -940,12 +1111,49 @@ func (s *Service) Launch(ctx context.Context, assetID, userID string) (*LaunchRe
 		Audit: newAuditMetadata("hoclieu.asset.launch", asset.ID, userID),
 	}
 	if asset.SelectedFileType == AssetFileTypeLink && upstreamConfigured {
-		resp.LaunchMode = LaunchModeExternal
+		if embedURL := googleSlidesEmbedURL(UpstreamURL); embedURL != "" {
+			resp.LaunchMode = LaunchModeGoogleSlide
+			resp.EmbedURL = embedURL
+		} else {
+			resp.LaunchMode = LaunchModeExternal
+			resp.EmbedURL = UpstreamURL
+		}
 	}
 	s.publishAssetAuditEvent(ctx, buildAssetAuditEvent(ctx, auditservice.ActionAssetLaunched, asset, userID, map[string]any{
 		"upstream_configured": upstreamConfigured,
 	}))
 	return resp, nil
+}
+
+func isHTTPURLValue(value string) bool {
+	trimmed := strings.TrimSpace(strings.ToLower(value))
+	return strings.HasPrefix(trimmed, "http://") || strings.HasPrefix(trimmed, "https://")
+}
+
+func googleSlidesEmbedURL(raw string) string {
+	if !isHTTPURLValue(raw) {
+		return ""
+	}
+
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return ""
+	}
+	if !strings.Contains(strings.ToLower(parsed.Host), "docs.google.com") || !strings.Contains(parsed.Path, "/presentation/") {
+		return ""
+	}
+
+	segments := strings.Split(strings.Trim(parsed.Path, "/"), "/")
+	for index := 0; index < len(segments)-1; index += 1 {
+		if segments[index] == "d" && strings.TrimSpace(segments[index+1]) != "" {
+			return fmt.Sprintf(
+				"https://docs.google.com/presentation/d/%s/embed?start=false&loop=false&delayms=3000",
+				segments[index+1],
+			)
+		}
+	}
+
+	return ""
 }
 
 func (s *Service) Pages(_ context.Context, assetID string) (*ViewerPagesResponseDTO, error) {
@@ -1088,6 +1296,88 @@ func normalizeTaxonomyKind(kind string) string {
 		return "categories"
 	default:
 		return strings.TrimSpace(kind)
+	}
+}
+
+func isPublicSubjectID(subjectID string) bool {
+	return strings.TrimSpace(subjectID) == "ic3-gs6"
+}
+
+func filterPublicPrograms(programs []ProgramDTO) []ProgramDTO {
+	out := make([]ProgramDTO, 0, len(programs))
+	allowedGrades := map[string]bool{"6": true, "7": true, "8": true}
+	for _, program := range programs {
+		publicSubjects := make([]string, 0, len(program.SubjectIDs))
+		publicGrades := make([]string, 0, len(program.GradeIDs))
+		for _, subjectID := range program.SubjectIDs {
+			if isPublicSubjectID(subjectID) {
+				publicSubjects = append(publicSubjects, subjectID)
+			}
+		}
+		for _, gradeID := range program.GradeIDs {
+			if allowedGrades[strings.TrimSpace(gradeID)] {
+				publicGrades = append(publicGrades, gradeID)
+			}
+		}
+		if len(publicSubjects) == 0 {
+			continue
+		}
+		program.SubjectIDs = publicSubjects
+		program.GradeIDs = publicGrades
+		out = append(out, program)
+	}
+	return out
+}
+
+func filterPublicGrades(grades []TaxonomyOptionDTO) []TaxonomyOptionDTO {
+	allowed := map[string]bool{"6": true, "7": true, "8": true}
+	out := make([]TaxonomyOptionDTO, 0, len(grades))
+	for _, grade := range grades {
+		if allowed[strings.TrimSpace(grade.ID)] {
+			out = append(out, grade)
+		}
+	}
+	return out
+}
+
+func filterPublicTaxonomyOptions(options []TaxonomyOptionDTO) []TaxonomyOptionDTO {
+	out := make([]TaxonomyOptionDTO, 0, len(options))
+	for _, option := range options {
+		if isPublicSubjectID(option.SubjectID) {
+			out = append(out, option)
+		}
+	}
+	return out
+}
+
+func filterPublicSubjects(options []TaxonomyOptionDTO) []TaxonomyOptionDTO {
+	out := make([]TaxonomyOptionDTO, 0, len(options))
+	for _, option := range options {
+		if isPublicSubjectID(option.ID) || isPublicSubjectID(option.Slug) {
+			out = append(out, option)
+		}
+	}
+	return out
+}
+
+func filterPublicOptionsForKind(kind string, options []TaxonomyOptionDTO) []TaxonomyOptionDTO {
+	switch kind {
+	case "grades":
+		return filterPublicGrades(options)
+	case "subjects":
+		return filterPublicSubjects(options)
+	case "categories", "book-series", "topics":
+		return filterPublicTaxonomyOptions(options)
+	case "sections":
+		out := make([]TaxonomyOptionDTO, 0, len(options))
+		for _, option := range options {
+			if isPublicSubjectID(option.SubjectID) || option.ID == "support-components" {
+				out = append(out, option)
+			}
+		}
+		return out
+	default:
+		return append([]TaxonomyOptionDTO(nil), options...)
 	}
 }
 

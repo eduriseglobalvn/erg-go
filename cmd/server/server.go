@@ -141,7 +141,7 @@ func provideGORM(cfg *config.Config, log *logger.Logger) (*database.GORMPostgres
 		User:            cfg.Database.User,
 		Password:        cfg.Database.Password,
 		Database:        cfg.Database.Name,
-		SSLMode:         "require", // Forced for Aiven
+		SSLMode:         cfg.Database.SSLMode,
 		MaxOpenConns:    cfg.Database.MaxOpenConns,
 		MaxIdleConns:    cfg.Database.MaxIdleConns,
 		ConnMaxLifetime: cfg.Database.ConnMaxLifetime,

@@ -295,6 +295,7 @@ type CreateResourceRequestDTO struct {
 	Subtitle         string            `json:"subtitle"`
 	Description      string            `json:"description"`
 	ThumbnailURL     string            `json:"thumbnailUrl"`
+	UpstreamURL      string            `json:"upstreamUrl"`
 	ProgramSlug      string            `json:"programSlug" binding:"required"`
 	SubjectID        string            `json:"subjectId" binding:"required"`
 	GradeID          string            `json:"gradeId"`
@@ -327,6 +328,7 @@ type UpdateResourceRequestDTO struct {
 	Subtitle         *string           `json:"subtitle"`
 	Description      *string           `json:"description"`
 	ThumbnailURL     *string           `json:"thumbnailUrl"`
+	UpstreamURL      *string           `json:"upstreamUrl"`
 	BookSeriesID     *string           `json:"bookSeriesId"`
 	TopicID          *string           `json:"topicId"`
 	LevelID          *string           `json:"levelId"`
@@ -416,4 +418,131 @@ type UploadAssetRequestDTO struct {
 type UploadResourceResponseDTO struct {
 	Resource *ResourceDetailDTO `json:"resource"`
 	Asset    *AssetDTO          `json:"asset"`
+}
+
+type TeacherDashboardNodeKind string
+
+const (
+	TeacherDashboardNodeKindFolder     TeacherDashboardNodeKind = "folder"
+	TeacherDashboardNodeKindCategory   TeacherDashboardNodeKind = "category"
+	TeacherDashboardNodeKindSection    TeacherDashboardNodeKind = "section"
+	TeacherDashboardNodeKindBookSeries TeacherDashboardNodeKind = "book_series"
+	TeacherDashboardNodeKindTopic      TeacherDashboardNodeKind = "topic"
+	TeacherDashboardNodeKindResource   TeacherDashboardNodeKind = "resource"
+	TeacherDashboardNodeKindLesson     TeacherDashboardNodeKind = "lesson"
+)
+
+type TeacherProgressEventType string
+
+const (
+	TeacherProgressEventOpen          TeacherProgressEventType = "open"
+	TeacherProgressEventStartTeaching TeacherProgressEventType = "start_teaching"
+	TeacherProgressEventMarkTaught    TeacherProgressEventType = "mark_taught"
+	TeacherProgressEventComplete      TeacherProgressEventType = "complete"
+)
+
+func (t TeacherProgressEventType) Valid() bool {
+	switch t {
+	case TeacherProgressEventOpen, TeacherProgressEventStartTeaching, TeacherProgressEventMarkTaught, TeacherProgressEventComplete:
+		return true
+	default:
+		return false
+	}
+}
+
+type TeacherProgressSummaryDTO struct {
+	ProgressRate float64 `json:"progressRate"`
+	TaughtCount  int     `json:"taughtCount"`
+	TotalCount   int     `json:"totalCount"`
+	PendingCount int     `json:"pendingCount"`
+}
+
+type TeacherDashboardNodeDTO struct {
+	ID            string                    `json:"id"`
+	Label         string                    `json:"label"`
+	Kind          TeacherDashboardNodeKind  `json:"kind"`
+	ParentID      string                    `json:"parentId,omitempty"`
+	SubjectID     string                    `json:"subjectId,omitempty"`
+	SubjectLabel  string                    `json:"subjectLabel,omitempty"`
+	Description   string                    `json:"description,omitempty"`
+	ResourceID    string                    `json:"resourceId,omitempty"`
+	ResourceType  string                    `json:"resourceType,omitempty"`
+	ThumbnailURL  string                    `json:"thumbnailUrl,omitempty"`
+	FileTypeBadge string                    `json:"fileTypeBadge,omitempty"`
+	HasChildren   bool                      `json:"hasChildren"`
+	Progress      TeacherProgressSummaryDTO `json:"progress"`
+	LastOpenedAt  *time.Time                `json:"lastOpenedAt,omitempty"`
+	UpdatedAt     *time.Time                `json:"updatedAt,omitempty"`
+}
+
+type TeacherDashboardBreadcrumbDTO struct {
+	ID    string                   `json:"id"`
+	Label string                   `json:"label"`
+	Kind  TeacherDashboardNodeKind `json:"kind"`
+}
+
+type TeacherSubjectTreeDTO struct {
+	SubjectID    string                          `json:"subjectId"`
+	SubjectLabel string                          `json:"subjectLabel"`
+	SchoolID     string                          `json:"schoolId"`
+	AcademicYear string                          `json:"academicYear"`
+	ParentID     string                          `json:"parentId,omitempty"`
+	Breadcrumbs  []TeacherDashboardBreadcrumbDTO `json:"breadcrumbs"`
+	Children     []TeacherDashboardNodeDTO       `json:"children"`
+	Progress     TeacherProgressSummaryDTO       `json:"progress"`
+}
+
+type TeacherRecentOpenedItemDTO struct {
+	ID            string                   `json:"id"`
+	SubjectID     string                   `json:"subjectId"`
+	SubjectLabel  string                   `json:"subjectLabel"`
+	NodeID        string                   `json:"nodeId"`
+	NodeLabel     string                   `json:"nodeLabel"`
+	NodeKind      TeacherDashboardNodeKind `json:"nodeKind"`
+	ResourceID    string                   `json:"resourceId,omitempty"`
+	ResourceTitle string                   `json:"resourceTitle,omitempty"`
+	ResourceType  string                   `json:"resourceType,omitempty"`
+	OpenedAt      time.Time                `json:"openedAt"`
+}
+
+type TeacherProgressDetailItemDTO struct {
+	ID           string                   `json:"id"`
+	Label        string                   `json:"label"`
+	Kind         TeacherDashboardNodeKind `json:"kind"`
+	Status       string                   `json:"status"`
+	ProgressRate float64                  `json:"progressRate"`
+}
+
+type TeacherProgressResponseDTO struct {
+	SubjectID    string                         `json:"subjectId"`
+	NodeID       string                         `json:"nodeId,omitempty"`
+	SchoolID     string                         `json:"schoolId"`
+	AcademicYear string                         `json:"academicYear"`
+	Summary      TeacherProgressSummaryDTO      `json:"summary"`
+	Items        []TeacherProgressDetailItemDTO `json:"items"`
+}
+
+type TeacherProgressEventDTO struct {
+	ID           string                   `json:"id"`
+	TeacherID    string                   `json:"teacherId"`
+	SchoolID     string                   `json:"schoolId"`
+	AcademicYear string                   `json:"academicYear"`
+	SubjectID    string                   `json:"subjectId"`
+	NodeID       string                   `json:"nodeId"`
+	NodeKind     TeacherDashboardNodeKind `json:"nodeKind"`
+	EventType    TeacherProgressEventType `json:"eventType"`
+	ResourceID   string                   `json:"resourceId,omitempty"`
+	OccurredAt   time.Time                `json:"occurredAt"`
+}
+
+type TrackTeacherProgressEventRequestDTO struct {
+	SchoolID     string                   `json:"schoolId" binding:"required"`
+	AcademicYear string                   `json:"academicYear" binding:"required"`
+	SubjectID    string                   `json:"subjectId" binding:"required"`
+	NodeID       string                   `json:"nodeId" binding:"required"`
+	NodeKind     TeacherDashboardNodeKind `json:"nodeKind" binding:"required"`
+	EventType    TeacherProgressEventType `json:"eventType" binding:"required"`
+	ResourceID   string                   `json:"resourceId"`
+	OccurredAt   *time.Time               `json:"occurredAt,omitempty"`
+	TeacherID    string                   `json:"-"`
 }

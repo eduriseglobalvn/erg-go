@@ -265,6 +265,7 @@ DB__PORT=15432
 DB__USER=avnadmin
 SECRET_DB__PASSWORD=super-secret
 DB__NAME=defaultdb
+DB__SSL_MODE=require
 MONGODB__URI=mongodb+srv://example.mongodb.net
 MONGODB__DATABASE=erg
 REDIS__HOST=valkey.example.com
@@ -298,6 +299,9 @@ AUTH__ACCESS_TOKEN_TTL=3h
 	}
 	if cfg.Database.Password != "super-secret" {
 		t.Errorf("expected db password from secret env, got %q", cfg.Database.Password)
+	}
+	if cfg.Database.SSLMode != "require" {
+		t.Errorf("expected db ssl mode require, got %q", cfg.Database.SSLMode)
 	}
 	if cfg.MongoDB.URI != "mongodb+srv://example.mongodb.net" {
 		t.Errorf("expected mongodb uri from .env, got %q", cfg.MongoDB.URI)
